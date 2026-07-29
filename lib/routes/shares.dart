@@ -1,3 +1,4 @@
+import 'package:fleer_backend/routes/socket.dart';
 import 'package:fleer_backend/utils/globals.dart' as globals;
 import 'package:fleer_backend/routes/_router.dart';
 
@@ -18,19 +19,16 @@ class ShareDetails {
   final DateTime creation;
   DateTime lastActivity;
 
+  String? receiverDeviceName;
+  SocketConnection? receiverConnection;
+
+  SocketConnection? senderConnection;
+
   final Map<String, List<int>> chunks = {};
   List<int>? primaryDetails;
   bool downloadCanStart = false;
   bool downloadStarted = false;
   int receivedBytes = 0;
-
-  Map<String, Object?> toJson() => {
-    'filesCount': filesCount,
-    'foldersCount': foldersCount,
-    'receivedBytes': receivedBytes,
-    'totalSize': totalSize,
-    'creation': creation.toIso8601String(),
-  };
 
   void touch() {
     lastActivity = DateTime.now().toUtc();
@@ -41,7 +39,7 @@ final sharedDetails = <String, ShareDetails>{};
 
 Router sharesRoutes() {
   return Router()
-    ..get('/shares/read', (Request request) => _readShare(request))
+    ..post('/shares/read', (Request request) => _readShare(request))
     ..post('/shares/create', (Request request) => _createShare(request))
     ..put('/shares/chunks', (Request request) => _putChunk(request));
 }
@@ -72,9 +70,14 @@ Future<Response> _createShare(Request request) async {
 }
 
 Future<Response> _readShare(Request request) async {
-  final shareId = request.url.queryParameters['shareId'];
-  if (shareId == null || shareId.isEmpty) {
-    throw HttpError(400, 'missing_shareId', 'Missing shareId query parameter');
+  final body = await readJsonBody(request, maxBytes: globals.maxJsonBytes);
+  if (body is! Map<String, Object?>) {
+    throw HttpError(400, 'body_invalid_content', 'Your request is missing a valid JSON body');
+  }
+
+  String shareId = body['shareId']?.toString() ?? '';
+  if (shareId.isEmpty) {
+    throw HttpError(400, 'missing_shareId', 'Missing shareId field in body');
   }
 
   final share = sharedDetails[shareId];
@@ -82,7 +85,15 @@ Future<Response> _readShare(Request request) async {
     throw HttpError(404, 'share_not_found', 'No share with the provided shareId was found');
   }
 
-  return jsonOk(share.toJson());
+  return jsonOk({
+    'shareId': shareId,
+    'filesCount': share.filesCount,
+    'foldersCount': share.foldersCount,
+    'receivedBytes': share.receivedBytes,
+    'totalSize': share.totalSize,
+    'creation': share.creation.toIso8601String(),
+    'primaryDetails': share.primaryDetails == null ? null : share.primaryDetails!.map((byte) => byte).toList(),
+  });
 }
 
 Future<Response> _putChunk(Request request) async {

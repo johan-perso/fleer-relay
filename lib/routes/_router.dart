@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:fleer_backend/routes/shares.dart';
 import 'package:fleer_backend/routes/socket.dart';
+import 'package:fleer_backend/utils/globals.dart' as globals;
 
 import 'dart:convert';
 import 'package:shelf/shelf.dart';
@@ -17,8 +18,14 @@ Router buildRouter() {
       message: 'The requested endpoint does not exist'
     )
   )
-    ..get('/health', (Request _) => jsonOk('Fleer Backend API is running'))
-    ..get('/shares/read', sharesRoutes().call)
+    ..get('/', (Request _) {
+      return jsonOk({ 'message': 'Fleer Backend API is running', 'server': {
+        'protocolVersion': globals.protocolVersion,
+        'maxDeviceNameLength': globals.maxDeviceNameLength,
+        'maxJsonBytes': globals.maxJsonBytes,
+      } });
+    })
+    ..post('/shares/read', sharesRoutes().call)
     ..get('/shares/socket', socketHandler())
     ..post('/shares/create', sharesRoutes().call);
 }

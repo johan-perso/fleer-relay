@@ -1,5 +1,6 @@
 name: fleer_backend
 publish_to: none
+repository: https://github.com/johan-perso/fleer-backend
 
 environment:
   sdk: ^3.12.0

@@ -1,3 +1,4 @@
+import 'package:fleer_backend/routes/shares.dart';
 import 'package:fleer_backend/utils/globals.dart' as globals;
 
 import 'dart:async';
@@ -42,6 +43,7 @@ class SocketConnection {
 
   final WebSocketChannel _channel;
   final String id;
+  bool isConnectedToShare = false;
   final DateTime connectedAt;
 
   bool _closed = false;
@@ -99,7 +101,75 @@ typedef SocketHandler = FutureOr<void> Function(
 
 final Map<String, SocketHandler> _handlers = {
   'FleerPing': (connection, data) => connection.send('FleerPong', data),
+  'ConnectToShare': _handleConnectToShare,
 };
+
+void _handleConnectToShare(SocketConnection connection, Object? data) {
+  if (connection.isConnectedToShare) {
+    connection.send('error', {'error': 'already_connected', 'message': 'You are already connected to a share'});
+    unawaited(connection.close(code: ws_status.normalClosure, reason: 'already_connected'));
+    return;
+  }
+
+  if (data is! Map<String, Object?>) {
+    connection.send('error', {'error': 'invalid_data', 'message': 'Invalid data format for ConnectToShare'});
+    unawaited(connection.close(code: ws_status.normalClosure, reason: 'invalid_data'));
+    return;
+  }
+
+  final shareId = data['shareId']?.toString();
+  if (shareId == null || shareId.isEmpty) {
+    connection.send('error', {'error': 'missing_shareId', 'message': 'Missing or empty shareId'});
+    unawaited(connection.close(code: ws_status.normalClosure, reason: 'missing_shareId'));
+    return;
+  }
+
+  final share = sharedDetails[shareId];
+  if (share == null) {
+    connection.send('error', {'error': 'share_not_found', 'message': 'Share not found for shareId: $shareId'});
+    unawaited(connection.close(code: ws_status.normalClosure, reason: 'share_not_found'));
+    return;
+  }
+
+  final isSender = data['isSender'] == true;
+  if (isSender) {
+    if (share.senderConnection != null) {
+      connection.send('error', {'error': 'sender_already_connected', 'message': 'A sender is already connected to this share'});
+      unawaited(connection.close(code: ws_status.normalClosure, reason: 'sender_already_connected'));
+      return;
+    }
+
+    share.senderConnection = connection;
+  }
+
+  if (!isSender) { // then, we are a receiver
+    if (share.receiverConnection != null) {
+      connection.send('error', {'error': 'receiver_already_connected', 'message': 'A receiver is already connected to this share'});
+      unawaited(connection.close(code: ws_status.normalClosure, reason: 'receiver_already_connected'));
+      return;
+    }
+
+    final deviceName = data['deviceName']?.toString();
+    if (deviceName == null || deviceName.isEmpty) {
+      connection.send('error', {'error': 'missing_deviceName', 'message': 'Missing or empty deviceName'});
+      unawaited(connection.close(code: ws_status.normalClosure, reason: 'missing_deviceName'));
+      return;
+    }
+
+    if (deviceName.length > globals.maxDeviceNameLength) {
+      connection.send('error', {'error': 'deviceName_too_long', 'message': 'Device name exceeds maximum length of ${globals.maxDeviceNameLength} characters'});
+      unawaited(connection.close(code: ws_status.normalClosure, reason: 'deviceName_too_long'));
+      return;
+    }
+
+    share.receiverDeviceName = deviceName;
+    share.receiverConnection = connection;
+  }
+
+  share.touch();
+  connection.isConnectedToShare = true;
+  connection.send('connectedToShare', {'shareId': shareId, 'isSender': isSender});
+}
 
 Handler socketHandler() => webSocketHandler(
   (WebSocketChannel channel, String? subprotocol) => _onConnect(channel),

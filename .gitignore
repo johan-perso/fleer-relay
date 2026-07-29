@@ -1,0 +1,13 @@
+.vscode
+.idea
+.cache
+
+.env
+
+**/.DS_Store
+.DS_Store?
+Thumbs.db
+desktop.ini
+
+pubspec.lock
+.dart_tool

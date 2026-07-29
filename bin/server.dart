@@ -1,4 +1,5 @@
 import 'package:fleer_backend/routes/_router.dart';
+import 'package:fleer_backend/routes/socket.dart';
 import 'package:fleer_backend/utils/load_env.dart';
 import 'package:fleer_backend/utils/globals.dart' as globals;
 import 'package:fleer_backend/utils/repeat.dart';
@@ -38,6 +39,10 @@ Future<void> _serve() async {
   stdout.writeln('Max chunked file size:   ${globals.maxChunkBytes} bytes');
   stdout.writeln('Environment:             ${globals.isProduction ? 'production' : 'development'}');
   stdout.writeln(repeat('-', 40));
+
+  Timer.periodic(const Duration(minutes: 1), (_) {
+    socketRegistry.cleanInactiveConnections();
+  });
 }
 
 Middleware _catchErrors() {

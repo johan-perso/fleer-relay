@@ -43,8 +43,9 @@ class SocketConnection {
 
   final WebSocketChannel _channel;
   final String id;
-  bool isConnectedToShare = false;
   final DateTime connectedAt;
+
+  bool isConnectedToShare = false;
 
   bool _closed = false;
 
@@ -89,6 +90,19 @@ class SocketRegistry {
     final frame = SocketMessage(type, data).encode();
     for (final connection in _connections.values) {
       if (connection != except) connection.sendRaw(frame);
+    }
+  }
+
+  // Clean connections that are not connected to a share and that are inactive
+  void cleanInactiveConnections() {
+    Duration maxAge = const Duration(minutes: 1);
+    final now = DateTime.now().toUtc();
+
+    final inactiveConnections = _connections.values.where((c) => !c.isConnectedToShare && now.difference(c.connectedAt) > maxAge).toList();
+    for (final connection in inactiveConnections) {
+      connection.send('error', {'error': 'inactive', 'message': 'Connection closed due to inactivity'});
+      connection.close(code: ws_status.normalClosure, reason: 'inactive');
+      _connections.remove(connection.id);
     }
   }
 }

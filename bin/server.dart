@@ -11,7 +11,8 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 
 Future<void> main() async {
   globals.port = getValueFromEnv(key: 'PORT', fallback: 8080, type: int);
-  globals.maxChunkBytes = getValueFromEnv(key: 'MAX_CHUNK_BYTES', fallback: (10 << 20), type: int); // 10 Mio
+  globals.maxChunkBytes = getValueFromEnv(key: 'MAX_CHUNK_BYTES', fallback: (10 << 20), type: int); // 10 MiB
+  globals.maxCachedBytes = getValueFromEnv(key: 'MAX_CACHED_BYTES', fallback: (100 << 20), type: int); // 100 MiB
   globals.isProduction = getValueFromEnv(key: 'ENV', fallback: 'dev', type: String) == 'production';
 
   await _serve();

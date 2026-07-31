@@ -1,37 +1,56 @@
 import 'package:fleer_backend/routes/socket.dart';
+import 'package:fleer_backend/utils/base64.dart';
 import 'package:fleer_backend/utils/globals.dart' as globals;
 import 'package:fleer_backend/routes/_router.dart';
 
+import 'dart:typed_data';
 import 'package:nanoid2/nanoid2.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
 class ShareDetails {
   ShareDetails({
+    required this.encryptionProtocolIndicator,
     required this.filesCount,
     required this.foldersCount,
     required this.totalSize,
   }) : creation = DateTime.now().toUtc(), lastActivity = DateTime.now().toUtc();
 
+  final int encryptionProtocolIndicator;
   final int filesCount;
   final int foldersCount;
-  final int totalSize;
+  int totalSize;
   final DateTime creation;
   DateTime lastActivity;
 
   String? receiverDeviceName;
   SocketConnection? receiverConnection;
+  bool canSendChunksToReceiver = false;
 
   SocketConnection? senderConnection;
 
   final Map<String, List<int>> chunks = {};
-  List<int>? primaryDetails;
-  bool downloadCanStart = false;
-  bool downloadStarted = false;
+  final Map<String, bool> chunksSentToReceiver = {};
+  final Map<String, bool> chunksAcknowledgedByReceiver = {};
   int receivedBytes = 0;
+  int allowedBytesMax = 0;
+
+  List<int>? primaryDetails;
+  bool uploadCanStart = false;
 
   void touch() {
     lastActivity = DateTime.now().toUtc();
+  }
+
+  // Remove every acknowledged chunks from all Maps
+  void clearAcknowledgedChunks() {
+    final acknowledgedChunks = chunksAcknowledgedByReceiver.entries.where((entry) => entry.value == true).toList();
+    for (final entry in acknowledgedChunks) {
+      final chunkId = entry.key;
+      chunks.remove(chunkId);
+      chunksSentToReceiver.remove(chunkId);
+      chunksAcknowledgedByReceiver.remove(chunkId);
+    }
   }
 }
 
@@ -50,6 +69,11 @@ Future<Response> _createShare(Request request) async {
     throw HttpError(400, 'body_invalid_content', 'Your request is missing a valid JSON body');
   }
 
+  final encryptionProtocolIndicator = _readCount(body, 'encryptionProtocolIndicator');
+  if (encryptionProtocolIndicator < 1) {
+    throw HttpError(400, 'invalid_encryptionProtocolIndicator', 'encryptionProtocolIndicator must be at least 1');
+  }
+
   final filesCount = _readCount(body, 'filesCount');
   final foldersCount = _readCount(body, 'foldersCount');
 
@@ -61,6 +85,7 @@ Future<Response> _createShare(Request request) async {
   final shareId = _generateShareId();
 
   sharedDetails[shareId] = ShareDetails(
+    encryptionProtocolIndicator: encryptionProtocolIndicator,
     filesCount: filesCount,
     foldersCount: foldersCount,
     totalSize: totalSize,
@@ -92,7 +117,10 @@ Future<Response> _readShare(Request request) async {
     'receivedBytes': share.receivedBytes,
     'totalSize': share.totalSize,
     'creation': share.creation.toIso8601String(),
-    'primaryDetails': share.primaryDetails == null ? null : share.primaryDetails!.map((byte) => byte).toList(),
+    'encryptionProtocolIndicator': share.encryptionProtocolIndicator,
+    'primaryDetails': share.primaryDetails == null
+      ? null
+      : toBase64Url(share.primaryDetails!),
   });
 }
 
@@ -107,14 +135,14 @@ Future<Response> _putChunk(Request request) async {
     throw HttpError(404, 'share_not_found', 'No share with the provided shareId was found');
   }
 
-  final chunkId = request.url.queryParameters['chunkId'];
-  if (chunkId == null || chunkId.isEmpty) {
-    throw HttpError(400, 'missing_chunkId', 'Missing chunkId query parameter');
+  final isThisPrimaryDetails = request.url.queryParameters['isThisPrimaryDetails'] == 'true';
+  if(isThisPrimaryDetails && (share.receivedBytes > 0 || share.primaryDetails != null || share.uploadCanStart)) {
+    throw HttpError(400, 'primary_details_already_received', 'Primary details have already been received for this share');
   }
 
-  final isThisPrimaryDetails = request.url.queryParameters['isThisPrimaryDetails'] == 'true';
-  if(isThisPrimaryDetails && (share.receivedBytes > 0 || share.primaryDetails != null || share.downloadCanStart)) {
-    throw HttpError(400, 'primary_details_already_received', 'Primary details have already been received for this share');
+  final chunkId = request.url.queryParameters['chunkId'];
+  if (!isThisPrimaryDetails && (chunkId == null || chunkId.isEmpty)) {
+    throw HttpError(400, 'missing_chunkId', 'Missing chunkId query parameter');
   }
 
   final contentType = request.headers['content-type'] ?? '';
@@ -126,15 +154,58 @@ Future<Response> _putChunk(Request request) async {
     throw HttpError(400, 'primary_details_not_received', 'Primary details must be sent before any other chunks');
   }
 
+  if (!isThisPrimaryDetails && !share.uploadCanStart) {
+    throw HttpError(400, 'upload_not_started', 'Upload cannot start until primary details have been received');
+  }
+
+  if (!isThisPrimaryDetails && share.receivedBytes >= share.allowedBytesMax) {
+    throw HttpError(400, 'wait_before_uploading', 'Upload limit reached for this share. Wait for the receiver to download some data before uploading more.');
+  }
+
   final data = await readBinaryBody(request, maxBytes: globals.maxChunkBytes!);
   if (data.isEmpty) throw HttpError(400, 'missing_body', 'Chunk body is empty');
 
-  if(isThisPrimaryDetails) {
+  if (!isThisPrimaryDetails && share.receivedBytes + data.length > share.allowedBytesMax) {
+    throw HttpError(400, 'wait_before_uploading', 'Upload limit reached for this share. Wait for the receiver to download some data before uploading more.');
+  }
+
+  if (isThisPrimaryDetails) {
     share.primaryDetails = data;
-    share.downloadCanStart = true;
+    share.allowedBytesMax = globals.maxCachedBytes!;
+    share.uploadCanStart = true;
+    share.touch();
   } else {
+    // Avoid skipping chunks by checking if the chunk before this one has been received. If not, we return an error.
+    final previousChunkId = (int.tryParse(chunkId!) ?? 0) - 1;
+    if (previousChunkId >= 0 && !share.chunks.containsKey(previousChunkId.toString())) {
+      throw HttpError(400, 'missing_previous_chunk', 'The previous chunk (chunkId: $previousChunkId) has not been received yet. Please send chunks in order.');
+    }
+
     share.chunks[chunkId] = data;
     share.receivedBytes += data.length;
+    share.touch();
+
+    if (share.totalSize < share.receivedBytes) { // clients can send more than the size they declared
+      share.totalSize = share.receivedBytes;
+    }
+
+    // If the receiver has not acknowledged the last 3 chunks, we pause sending new chunks to the receiver to avoid overwhelming it.
+    // Chunks will be automatically sent and resumed by the socket handler once the receiver acknowledges at least 3.
+    share.clearAcknowledgedChunks();
+    int acknowledgedCount = 0;
+    for (int i = 0; i < 3; i++) {
+      final checkChunkId = (int.tryParse(chunkId) ?? 0) - i;
+      if (checkChunkId >= 0 && share.chunksAcknowledgedByReceiver[checkChunkId.toString()] == true) {
+        acknowledgedCount++;
+      }
+    }
+    if (acknowledgedCount < 3) {
+      share.canSendChunksToReceiver = false;
+    } else {
+      share.canSendChunksToReceiver = true;
+    }
+
+    if (int.tryParse(chunkId) != null && share.canSendChunksToReceiver) share.receiverConnection?.sendBinary(frameChunk(int.parse(chunkId), data));
   }
 
   return jsonOk({
@@ -143,6 +214,14 @@ Future<Response> _putChunk(Request request) async {
     'receivedBytes': share.receivedBytes,
     'totalSize': share.totalSize,
   });
+}
+
+Uint8List frameChunk(int index, List<int> payload) {
+  final out = Uint8List(5 + payload.length);
+  out[0] = 1; // 1 = chunk de fichier
+  ByteData.view(out.buffer).setUint32(1, index, Endian.big);
+  out.setRange(5, out.length, payload);
+  return out;
 }
 
 int _readCount(Map<String, Object?> body, String field) {

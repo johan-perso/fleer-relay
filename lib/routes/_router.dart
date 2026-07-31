@@ -26,8 +26,9 @@ Router buildRouter() {
       } });
     })
     ..post('/shares/read', sharesRoutes().call)
-    ..get('/shares/socket', socketHandler())
-    ..post('/shares/create', sharesRoutes().call);
+    ..get('/shares/updates', socketHandler())
+    ..post('/shares/create', sharesRoutes().call)
+    ..put('/shares/chunks', sharesRoutes().call);
 }
 
 Response jsonOk(Object? data) => Response.ok(jsonEncode({'data': data}), headers: _headers);
@@ -80,6 +81,8 @@ Future<Object?> readJsonBody(Request request, {required int maxBytes}) async {
 }
 
 Future<Uint8List> readBinaryBody(Request request, {required int maxBytes}) async {
+  maxBytes += (maxBytes * 0.0001).toInt(); // Add 0.01% to account for overhead (due to encryption)
+
   final declared = request.contentLength;
   if (declared != null && declared > maxBytes) {
     throw HttpError(413, 'body_too_large', 'Body exceeds the maximum size of $maxBytes bytes');

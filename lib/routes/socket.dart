@@ -270,9 +270,9 @@ void _handleSendingPrecedentChunks(SocketConnection connection, Object? data) {
 
   // Send chunks that the receiver has not received yet, but that we already got from the sender
   for (int i = fromChunkId; i < (untilChunkId > 0 ? untilChunkId : share.chunks.length); i++) {
-    final chunkData = share.chunks[i.toString()];
+    final chunkData = share.chunks[i];
     if (chunkData != null) {
-      share.chunksSentToReceiver[i.toString()] = true;
+      share.chunksSentToReceiver[i] = true;
       connection.sendBinary(frameChunk(i, chunkData));
     }
   }
@@ -352,23 +352,20 @@ void _handleAcknowledgeChunks(SocketConnection connection, Object? data) {
     return;
   } else {
     for (final dynamic chunkId in acknowledgedChunks) {
-      String chunkIdStr = chunkId is String ? chunkId : chunkId.toString();
-
-      if (!share.chunksSentToReceiver.containsKey(chunkIdStr)) {
-        connection.send('fatal', {'error': 'invalid_chunkId', 'message': 'Chunk ID $chunkIdStr was not sent to you'});
+      if (!share.chunksSentToReceiver.containsKey(chunkId)) {
+        connection.send('fatal', {'error': 'invalid_chunkId', 'message': 'Chunk ID $chunkId was not sent to you'});
         unawaited(connection.close(code: ws_status.normalClosure, reason: 'invalid_chunkId'));
         continue;
       }
 
-      share.chunksAcknowledgedByReceiver[chunkIdStr] = true;
+      share.chunksAcknowledgedByReceiver[chunkId] = true;
     }
   }
 
   // Allow the sender to send more chunks to the receiver, based on what the receiver has acknowledged
   // Example: the receiver has acknowledged 40 MB of chunks, so the sender can send 40 MB more to the receiver
   share.allowedBytesMax = share.allowedBytesMax + acknowledgedChunks.fold<int>(0, (sum, chunkId) {
-    String chunkIdStr = chunkId is String ? chunkId : chunkId.toString();
-    final chunkData = share.chunks[chunkIdStr];
+    final chunkData = share.chunks[chunkId];
     return sum + (chunkData?.length ?? 0);
   });
 
@@ -382,10 +379,10 @@ void _handleAcknowledgeChunks(SocketConnection connection, Object? data) {
       if (i >= (3 - unacknowledgedChunksAmount)) break; // send only a few pending chunks to avoid overwhelming the receiver
 
       final entry = pendingChunks[i];
-      final chunkIdStr = entry.key;
-      final chunkData = share.chunks[chunkIdStr];
+      final chunkId = entry.key;
+      final chunkData = share.chunks[chunkId];
       if (chunkData != null) {
-        connection.sendBinary(frameChunk(int.tryParse(chunkIdStr) ?? 0, chunkData));
+        connection.sendBinary(frameChunk(chunkId, chunkData));
       }
       pendingChunks.remove(entry); // remove the chunk from the pending list after sending it
     }

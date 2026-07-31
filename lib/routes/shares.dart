@@ -29,9 +29,9 @@ class ShareDetails {
 
   SocketConnection? senderConnection;
 
-  final Map<String, List<int>> chunks = {};
-  final Map<String, bool> chunksSentToReceiver = {};
-  final Map<String, bool> chunksAcknowledgedByReceiver = {};
+  final Map<int, List<int>> chunks = {};
+  final Map<int, bool> chunksSentToReceiver = {};
+  final Map<int, bool> chunksAcknowledgedByReceiver = {};
   int receivedBytes = 0;
   int allowedBytesMax = 0;
 
@@ -140,9 +140,17 @@ Future<Response> _putChunk(Request request) async {
     throw HttpError(400, 'primary_details_already_received', 'Primary details have already been received for this share');
   }
 
-  final chunkId = request.url.queryParameters['chunkId'];
-  if (!isThisPrimaryDetails && (chunkId == null || chunkId.isEmpty)) {
+  final chunkIdStr = request.url.queryParameters['chunkId'];
+  if (!isThisPrimaryDetails && (chunkIdStr == null || chunkIdStr.isEmpty)) {
     throw HttpError(400, 'missing_chunkId', 'Missing chunkId query parameter');
+  }
+
+  int? chunkId;
+  if (chunkIdStr is! num) {
+     chunkId = int.tryParse(chunkIdStr ?? '');
+  }
+  if (chunkId != null && (chunkId < 0 || chunkId > 4294967295 - 1)) { // highest value for a 32-bit unsigned integer is 4294967295, but we subtract 1 to avoid potential overflow issues
+    throw HttpError(400, 'invalid_chunkId', 'chunkId must be a non-negative integer between 0 and 4294967294');
   }
 
   final contentType = request.headers['content-type'] ?? '';
@@ -175,9 +183,13 @@ Future<Response> _putChunk(Request request) async {
     share.uploadCanStart = true;
     share.touch();
   } else {
+    if (chunkId == null) {
+      throw HttpError(400, 'missing_chunkId', 'Missing chunkId query parameter, or it is not a valid integer');
+    }
+
     // Avoid skipping chunks by checking if the chunk before this one has been received. If not, we return an error.
-    final previousChunkId = (int.tryParse(chunkId!) ?? 0) - 1;
-    if (previousChunkId >= 0 && !share.chunks.containsKey(previousChunkId.toString())) {
+    final previousChunkId = chunkId - 1;
+    if (previousChunkId >= 0 && !share.chunks.containsKey(previousChunkId)) {
       throw HttpError(400, 'missing_previous_chunk', 'The previous chunk (chunkId: $previousChunkId) has not been received yet. Please send chunks in order.');
     }
 
@@ -194,8 +206,8 @@ Future<Response> _putChunk(Request request) async {
     share.clearAcknowledgedChunks();
     int acknowledgedCount = 0;
     for (int i = 0; i < 3; i++) {
-      final checkChunkId = (int.tryParse(chunkId) ?? 0) - i;
-      if (checkChunkId >= 0 && share.chunksAcknowledgedByReceiver[checkChunkId.toString()] == true) {
+      final checkChunkId = chunkId - i;
+      if (checkChunkId >= 0 && share.chunksAcknowledgedByReceiver[checkChunkId] == true) {
         acknowledgedCount++;
       }
     }
@@ -205,7 +217,7 @@ Future<Response> _putChunk(Request request) async {
       share.canSendChunksToReceiver = true;
     }
 
-    if (int.tryParse(chunkId) != null && share.canSendChunksToReceiver) share.receiverConnection?.sendBinary(frameChunk(int.parse(chunkId), data));
+    if (share.canSendChunksToReceiver) share.receiverConnection?.sendBinary(frameChunk(chunkId, data));
   }
 
   return jsonOk({
@@ -218,7 +230,7 @@ Future<Response> _putChunk(Request request) async {
 
 Uint8List frameChunk(int index, List<int> payload) {
   final out = Uint8List(5 + payload.length);
-  out[0] = 1; // 1 = chunk de fichier
+  out[0] = 1; // 1 = file chunk
   ByteData.view(out.buffer).setUint32(1, index, Endian.big);
   out.setRange(5, out.length, payload);
   return out;

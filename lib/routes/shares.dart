@@ -211,13 +211,18 @@ Future<Response> _putChunk(Request request) async {
         acknowledgedCount++;
       }
     }
-    if (acknowledgedCount < 3) {
+
+    if (share.chunks.length <= 3) {
+      share.canSendChunksToReceiver = true;
+    } else if (acknowledgedCount < 3) { // means we have less than 3 acknowledged chunks, so we pause sending new chunks to the receiver to avoid overwhelming it
       share.canSendChunksToReceiver = false;
     } else {
       share.canSendChunksToReceiver = true;
     }
 
-    if (share.canSendChunksToReceiver) share.receiverConnection?.sendBinary(frameChunk(chunkId, data));
+    if (share.canSendChunksToReceiver) {
+      share.receiverConnection?.sendBinary(frameChunk(chunkId, data));
+    }
   }
 
   return jsonOk({
@@ -230,7 +235,7 @@ Future<Response> _putChunk(Request request) async {
 
 Uint8List frameChunk(int index, List<int> payload) {
   final out = Uint8List(5 + payload.length);
-  out[0] = 1; // 1 = file chunk
+  out[0] = 0; // 0 = file chunk
   ByteData.view(out.buffer).setUint32(1, index, Endian.big);
   out.setRange(5, out.length, payload);
   return out;

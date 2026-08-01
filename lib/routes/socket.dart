@@ -307,8 +307,8 @@ void _handleResumeDownloading(SocketConnection connection, Object? data) {
     return;
   }
 
-  if (share.chunks.isNotEmpty && share.chunksSentToReceiver.entries.any((entry) => entry.value != true || (entry.value == true && share.chunksAcknowledgedByReceiver[entry.key] != true))) {
-    connection.send('fatal', {'error': 'incomplete_chunks', 'message': 'You cannot resume downloading if there are chunks that have been sent to you but not yet acknowledged'});
+  if (share.chunks.isNotEmpty && share.chunks.entries.any((entry) => entry.value != true || (entry.value == true && share.chunksAcknowledgedByReceiver[entry.key] != true))) {
+    connection.send('fatal', {'error': 'incomplete_chunks', 'message': 'You cannot resume downloading if there are chunks that you did not acknowledged yet'});
     unawaited(connection.close(code: ws_status.normalClosure, reason: 'incomplete_chunks'));
     return;
   }

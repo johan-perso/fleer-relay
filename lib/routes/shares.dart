@@ -8,6 +8,11 @@ import 'package:nanoid2/nanoid2.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
+enum ShareRole {
+  sender,
+  receiver,
+}
+
 class ShareDetails {
   ShareDetails({
     required this.encryptionProtocolIndicator,

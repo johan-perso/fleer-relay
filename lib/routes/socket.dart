@@ -47,6 +47,7 @@ class SocketConnection {
 
   bool isConnectedToShare = false;
   String? connectedShareId;
+  ShareRole? shareRole;
 
   bool isDownloadResumed = false;
 
@@ -86,7 +87,7 @@ class SocketRegistry {
 
   // Add or remove a connection from the registry
   void add(SocketConnection connection) => _connections[connection.id] = connection;
-  void remove(SocketConnection connection) {
+  void remove(SocketConnection connection, { String? reason }) {
     ShareDetails? share = sharedDetails[connection.connectedShareId];
     if (share != null) {
       if (share.senderConnection == connection) {
@@ -171,6 +172,7 @@ void _handleConnectToShare(SocketConnection connection, Object? data) {
     }
 
     share.senderConnection = connection;
+    connection.shareRole = ShareRole.sender;
 
     if (share.receiverDeviceName != null) {
       connection.send('receiverName', {'name': share.receiverDeviceName});
@@ -199,6 +201,7 @@ void _handleConnectToShare(SocketConnection connection, Object? data) {
 
     share.receiverDeviceName = deviceName;
     share.receiverConnection = connection;
+    connection.shareRole = ShareRole.receiver;
 
     if (share.senderConnection != null) {
       share.senderConnection!.send('receiverName', {'name': deviceName});
@@ -415,8 +418,32 @@ void _onConnect(WebSocketChannel channel) {
 
   channel.stream.listen(
     (raw) => _onMessage(connection, raw),
-    onDone: () => socketRegistry.remove(connection),
-    onError: (Object _) => socketRegistry.remove(connection),
+    onDone: () {
+      // Code 1000 (normal) and 1001 (going away) should not be considered as errors
+      final code = channel.closeCode;
+      if (code != null && code != 1000 && code != 1001) {
+        // If the connection was a receiver, notify the sender that it has disconnected
+        if (connection.isConnectedToShare && connection.shareRole == ShareRole.receiver) {
+          sharedDetails[connection.connectedShareId]?.senderConnection?.send('warning', {'error': 'receiver_disconnected', 'message': 'Receiver disconnected unexpectedly', 'code': code});
+        }
+
+        // If the connection was a sender, notify the receiver that it has disconnected
+        if (connection.isConnectedToShare && connection.shareRole == ShareRole.sender) {
+          sharedDetails[connection.connectedShareId]?.receiverConnection?.send('warning', {'error': 'sender_disconnected', 'message': 'Sender disconnected unexpectedly', 'code': code});
+        }
+      }
+
+      if (connection.connectedShareId is String && connection.connectedShareId!.isNotEmpty && sharedDetails.containsKey(connection.connectedShareId)) {
+        sharedDetails[connection.connectedShareId]?.touch();
+      }
+
+      socketRegistry.remove(connection);
+    },
+    onError: (error, stackTrace) {
+      print('error: $error');
+      print('stackTrace: $stackTrace');
+      socketRegistry.remove(connection);
+    },
     cancelOnError: true,
   );
 

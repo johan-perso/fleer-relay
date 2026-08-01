@@ -277,7 +277,17 @@ void _handleSendingPrecedentChunks(SocketConnection connection, Object? data) {
     }
   }
 
+  // If there is no pending to be sent chunks anymore
+  List pendingChunks = share.chunks.entries.where((entry) => share.chunksSentToReceiver[entry.key] != true).toList();
+  bool isTherePendingChunks = pendingChunks.isNotEmpty;
+  if (!isTherePendingChunks) {
+    connection.send('precedentsChunksUpdate', {'remaining': 0, 'message': 'All chunks have been sent to the receiver'});
+  } else {
+    connection.send('precedentsChunksUpdate', {'remaining': pendingChunks.length, 'message': 'There are still chunks that have not been sent to the receiver'});
+  }
+
   share.touch();
+  // no need to enable share.canSendChunksToReceiver here, because it will be enabled when the receiver acknowledges the chunks
 }
 
 void _handleResumeDownloading(SocketConnection connection, Object? data) {

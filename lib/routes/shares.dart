@@ -42,6 +42,26 @@ class ShareDetails {
     lastActivity = DateTime.now().toUtc();
   }
 
+  // Check if we should send chunks to the receiver based on the last 3 acknowledged chunks.
+  // If there is at least 3 not acknowledged chunks, we pause sending new chunks to the receiver to avoid overwhelming it.
+  void checkSendingChunksToReceiver() {
+    int acknowledgedCount = 0;
+    for (int i = 0; i < 3; i++) {
+      final checkChunkId = chunks.keys.isNotEmpty ? chunks.keys.last - i : -1;
+      if (checkChunkId >= 0 && chunksAcknowledgedByReceiver[checkChunkId] == true) {
+        acknowledgedCount++;
+      }
+    }
+
+    if (chunks.length <= 3) {
+      canSendChunksToReceiver = true;
+    } else if (acknowledgedCount < 3) { // means we have less than 3 acknowledged chunks
+      canSendChunksToReceiver = false;
+    } else {
+      canSendChunksToReceiver = true;
+    }
+  }
+
   // Remove every acknowledged chunks from all Maps
   void clearAcknowledgedChunks() {
     final acknowledgedChunks = chunksAcknowledgedByReceiver.entries.where((entry) => entry.value == true).toList();
@@ -201,24 +221,9 @@ Future<Response> _putChunk(Request request) async {
       share.totalSize = share.receivedBytes;
     }
 
-    // If the receiver has not acknowledged the last 3 chunks, we pause sending new chunks to the receiver to avoid overwhelming it.
-    // Chunks will be automatically sent and resumed by the socket handler once the receiver acknowledges at least 3.
+    // Check if the receiver should receive this chunk
     share.clearAcknowledgedChunks();
-    int acknowledgedCount = 0;
-    for (int i = 0; i < 3; i++) {
-      final checkChunkId = chunkId - i;
-      if (checkChunkId >= 0 && share.chunksAcknowledgedByReceiver[checkChunkId] == true) {
-        acknowledgedCount++;
-      }
-    }
-
-    if (share.chunks.length <= 3) {
-      share.canSendChunksToReceiver = true;
-    } else if (acknowledgedCount < 3) { // means we have less than 3 acknowledged chunks, so we pause sending new chunks to the receiver to avoid overwhelming it
-      share.canSendChunksToReceiver = false;
-    } else {
-      share.canSendChunksToReceiver = true;
-    }
+    share.checkSendingChunksToReceiver();
 
     if (share.canSendChunksToReceiver) {
       share.receiverConnection?.sendBinary(frameChunk(chunkId, data));

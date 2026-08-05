@@ -80,6 +80,30 @@ class ShareDetails {
       if(chunks.containsKey(chunkId)) chunks[chunkId] = null; // only clear the data, keep the key to avoid skipping chunks
     }
   }
+
+  // Method to restart the transfer if needed (ex: the receiver requested a chunk that was already sent but cleared from memory)
+  void restartTransfer({
+    String? textualReason = 'The entire transfer will be restarted because the sender need to send again a few data that were already sent to the receiver'
+  }) {
+    receivedBytes = 0;
+    allowedBytesMax = globals.maxCachedBytes!;
+
+    uploadCanStart = true;
+    canSendChunksToReceiver = false;
+
+    messagesFromReceiverQueue.clear();
+    messagesFromSenderQueue.clear();
+
+    chunks.clear();
+    chunksSentToReceiver.clear();
+    chunksAcknowledgedByReceiver.clear();
+
+    receiverConnection?.send('restartTransfer', {'message': textualReason});
+    senderConnection?.send('restartTransfer', {'message': textualReason});
+    receiverConnection?.isDownloadResumed = true;
+
+    touch();
+  }
 }
 
 final sharedDetails = <String, ShareDetails>{};

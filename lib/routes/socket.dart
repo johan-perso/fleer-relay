@@ -280,16 +280,20 @@ void _handleSendingPrecedentChunks(SocketConnection connection, Object? data) {
   }
 
   // Send chunks that the receiver has not received yet, but that we already got from the sender
-  // TODO: ça foire tt quand on a supprimé de notre mémoire le chunk (chunk with lid not found)
   for (int i = fromChunkId; i <= untilChunkId; i++) {
     if (i > untilChunkId) break;
 
     final chunkData = share.chunks[i];
+    if (share.chunks.containsKey(i) && chunkData == null) {
+      // This mean we already received this chunk from the sender, but we cleared it from the memory afterwards.
+      // Because the receiver need it again, we need to make the sender resend it to us.
+      share.restartTransfer();
+      return;
+    }
+
     if (chunkData != null) {
       share.chunksSentToReceiver[i] = true;
       connection.sendBinary(frameChunk(i, chunkData));
-    } else {
-      print('chunk with lid=$i not found or empty (keys=${share.chunks.keys})');
     }
   }
 
@@ -298,7 +302,7 @@ void _handleSendingPrecedentChunks(SocketConnection connection, Object? data) {
   bool isTherePendingChunks = pendingChunks.isNotEmpty;
   if (!isTherePendingChunks) {
     connection.send('precedentsChunksUpdate', {'remaining': 0, 'message': 'All chunks have been sent to the receiver'});
-    connection.isDownloadResumed = true; // there is not chunk to acknowledge, so we need to resume the download right here
+    connection.isDownloadResumed = true; // there is no chunk to acknowledge, so we need to resume the download right here
   } else {
     connection.send('precedentsChunksUpdate', {'remaining': pendingChunks.length, 'lastChunkId': pendingChunks.last.key, 'message': 'There are still chunks that have not been sent to the receiver'});
     // no need to enable share.canSendChunksToReceiver here, because it will be enabled when the receiver acknowledges the chunks
@@ -373,11 +377,14 @@ void _handleAcknowledgeChunks(SocketConnection connection, Object? data) {
       final chunkId = entry.key;
       final chunkData = share.chunks[chunkId];
 
+      if (share.chunks.containsKey(i) && chunkData == null) {
+        share.restartTransfer();
+        return;
+      }
+
       if (chunkData != null) {
         share.chunksSentToReceiver[chunkId] = true;
         connection.sendBinary(frameChunk(chunkId, chunkData));
-      } else {
-        print('chunk with lid=$chunkId not found or empty (keys=${share.chunks.keys})');
       }
 
       // we should not remove the chunk from pendingChunks if we sent them here, because we need to wait for an ack for them

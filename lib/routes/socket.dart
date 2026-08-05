@@ -241,19 +241,8 @@ void _handleSendingPrecedentChunks(SocketConnection connection, Object? data) {
     return;
   }
 
-  String? shareId = connection.connectedShareId;
-  if (!connection.isConnectedToShare || shareId == null || shareId.isEmpty) {
-    connection.send('fatal', {'error': 'not_connected_to_share', 'message': 'You are not connected to any share'});
-    unawaited(connection.close(code: ws_status.normalClosure, reason: 'not_connected_to_share'));
-    return;
-  }
-
-  final share = sharedDetails[shareId];
-  if (share == null) {
-    connection.send('fatal', {'error': 'share_deleted', 'message': 'The share you were connected to no longer exists'});
-    unawaited(connection.close(code: ws_status.normalClosure, reason: 'share_deleted'));
-    return;
-  }
+  ShareDetails? share = _checkSocketConnectedShare(connection);
+  if(share == null) return;
 
   final isSender = share.senderConnection == connection;
   if (isSender) {
@@ -319,19 +308,8 @@ void _handleSendingPrecedentChunks(SocketConnection connection, Object? data) {
 }
 
 void _handleAcknowledgeChunks(SocketConnection connection, Object? data) {
-  String? shareId = connection.connectedShareId;
-  if (!connection.isConnectedToShare || shareId == null || shareId.isEmpty) {
-    connection.send('fatal', {'error': 'not_connected_to_share', 'message': 'You are not connected to any share'});
-    unawaited(connection.close(code: ws_status.normalClosure, reason: 'not_connected_to_share'));
-    return;
-  }
-
-  final share = sharedDetails[shareId];
-  if (share == null) {
-    connection.send('fatal', {'error': 'share_deleted', 'message': 'The share you were connected to no longer exists'});
-    unawaited(connection.close(code: ws_status.normalClosure, reason: 'share_deleted'));
-    return;
-  }
+  ShareDetails? share = _checkSocketConnectedShare(connection);
+  if(share == null) return;
 
   final isSender = share.senderConnection == connection;
   if (isSender) {
@@ -418,19 +396,8 @@ void _handleAcknowledgeChunks(SocketConnection connection, Object? data) {
 }
 
 void _handleSengMsgToOtherWay(SocketConnection connection, Object? data) {
-  String? shareId = connection.connectedShareId;
-  if (!connection.isConnectedToShare || shareId == null || shareId.isEmpty) {
-    connection.send('fatal', {'error': 'not_connected_to_share', 'message': 'You are not connected to any share'});
-    unawaited(connection.close(code: ws_status.normalClosure, reason: 'not_connected_to_share'));
-    return;
-  }
-
-  final share = sharedDetails[shareId];
-  if (share == null) {
-    connection.send('fatal', {'error': 'share_deleted', 'message': 'The share you were connected to no longer exists'});
-    unawaited(connection.close(code: ws_status.normalClosure, reason: 'share_deleted'));
-    return;
-  }
+  ShareDetails? share = _checkSocketConnectedShare(connection);
+  if(share == null) return;
 
   final isSender = share.senderConnection == connection;
   if (isSender) {
@@ -442,6 +409,24 @@ void _handleSengMsgToOtherWay(SocketConnection connection, Object? data) {
     share.messagesFromReceiverQueue.add(data);
     return;
   }
+}
+
+ShareDetails? _checkSocketConnectedShare(SocketConnection connection) {
+  String? shareId = connection.connectedShareId;
+  if (!connection.isConnectedToShare || shareId == null || shareId.isEmpty) {
+    connection.send('fatal', {'error': 'not_connected_to_share', 'message': 'You are not connected to any share'});
+    unawaited(connection.close(code: ws_status.normalClosure, reason: 'not_connected_to_share'));
+    return null;
+  }
+
+  ShareDetails? share = sharedDetails[shareId];
+  if (share == null) {
+    connection.send('fatal', {'error': 'share_deleted', 'message': 'The share you were connected to no longer exists'});
+    unawaited(connection.close(code: ws_status.normalClosure, reason: 'share_deleted'));
+    return null;
+  }
+
+  return share;
 }
 
 Handler socketHandler() => webSocketHandler(

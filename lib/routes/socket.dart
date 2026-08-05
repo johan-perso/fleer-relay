@@ -457,27 +457,12 @@ void _onConnect(WebSocketChannel channel) {
     onDone: () {
       // Code 1000 (normal) and 1001 (going away) should not be considered as errors
       final code = channel.closeCode;
-      if (code != null && code != 1000 && code != 1001) {
-        // If the connection was a receiver, notify the sender that it has disconnected
-        if (connection.isConnectedToShare && connection.shareRole == ShareRole.receiver) {
-          sharedDetails[connection.connectedShareId]?.senderConnection?.send('warning', {'error': 'receiver_disconnected', 'message': 'Receiver disconnected unexpectedly', 'code': code});
-        }
-
-        // If the connection was a sender, notify the receiver that it has disconnected
-        if (connection.isConnectedToShare && connection.shareRole == ShareRole.sender) {
-          sharedDetails[connection.connectedShareId]?.receiverConnection?.send('warning', {'error': 'sender_disconnected', 'message': 'Sender disconnected unexpectedly', 'code': code});
-        }
-      }
-
-      if (connection.connectedShareId is String && connection.connectedShareId!.isNotEmpty && sharedDetails.containsKey(connection.connectedShareId)) {
-        sharedDetails[connection.connectedShareId]?.touch();
-      }
+      _warnDisconnection(connection, code != null && code != 1000 && code != 1001 ? code : null);
 
       socketRegistry.remove(connection);
     },
-    onError: (error, stackTrace) {
-      print('error: $error');
-      print('stackTrace: $stackTrace');
+    onError: (_) {
+      _warnDisconnection(connection, null);
       socketRegistry.remove(connection);
     },
     cancelOnError: true,
@@ -489,6 +474,23 @@ void _onConnect(WebSocketChannel channel) {
       'connectionId': connection.id
     }
   );
+}
+
+void _warnDisconnection(SocketConnection connection, int? code) {
+  // If the connection was a receiver, notify the sender that it has disconnected
+  if (connection.isConnectedToShare && connection.shareRole == ShareRole.receiver) {
+    sharedDetails[connection.connectedShareId]?.senderConnection?.send('warning', {'error': 'receiver_disconnected', 'message': 'Receiver disconnected unexpectedly', 'code': code});
+  }
+
+  // If the connection was a sender, notify the receiver that it has disconnected
+  if (connection.isConnectedToShare && connection.shareRole == ShareRole.sender) {
+    sharedDetails[connection.connectedShareId]?.receiverConnection?.send('warning', {'error': 'sender_disconnected', 'message': 'Sender disconnected unexpectedly', 'code': code});
+  }
+
+  // Touch the share details to update properties
+  if (connection.connectedShareId is String && connection.connectedShareId!.isNotEmpty && sharedDetails.containsKey(connection.connectedShareId)) {
+    sharedDetails[connection.connectedShareId]?.touch();
+  }
 }
 
 void _onMessage(SocketConnection connection, Object? raw) {

@@ -3,6 +3,7 @@ import 'package:fleer_backend/utils/globals.dart' as globals;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:nanoid2/nanoid2.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_web_socket/shelf_web_socket.dart';
@@ -96,6 +97,11 @@ class SocketRegistry {
       if (share.receiverConnection == connection) {
         share.receiverConnection = null;
       }
+
+      share.chunksAcknowledgedByReceiver.clear();
+      share.chunksSentToReceiver.clear();
+      share.canSendChunksToReceiver = false;
+      share.touch();
     }
 
     _connections.remove(connection.id);
@@ -133,7 +139,6 @@ final Map<String, SocketHandler> _handlers = {
   'FleerPing': (connection, data) => connection.send('FleerPong', data),
   'ConnectToShare': _handleConnectToShare,
   'GetPrecedentsChunks': _handleSendingPrecedentChunks,
-  'ResumeDownloading': _handleResumeDownloading,
   'AcknowledgeChunks': _handleAcknowledgeChunks,
   'SendMsgToOtherWay': _handleSengMsgToOtherWay
 };
@@ -225,7 +230,7 @@ void _handleConnectToShare(SocketConnection connection, Object? data) {
 
 void _handleSendingPrecedentChunks(SocketConnection connection, Object? data) {
   if (connection.isDownloadResumed) {
-    connection.send('fatal', {'error': 'download_has_resumed', 'message': 'You cannot request precedent chunks if download is resumed'});
+    connection.send('fatal', {'error': 'download_has_resumed', 'message': 'You cannot request precedent chunks if download has already resumed'});
     unawaited(connection.close(code: ws_status.normalClosure, reason: 'download_has_resumed'));
     return;
   }
@@ -276,16 +281,26 @@ void _handleSendingPrecedentChunks(SocketConnection connection, Object? data) {
     unawaited(connection.close(code: ws_status.normalClosure, reason: 'invalid_chunk_range'));
     return;
   }
-  if (untilChunkId > 0 && untilChunkId > share.chunks.length) {
-    untilChunkId = share.chunks.length; // silently adjust untilChunkId to the maximum available chunk index
+
+  if (share.chunks.isNotEmpty) {
+    int highestChunkId = share.chunks.keys.last;
+    if (untilChunkId > highestChunkId) {
+      // Silently adjust untilChunkId to the maximum available chunk index if it exceeds the number of chunks we have
+      untilChunkId = highestChunkId;
+    }
   }
 
   // Send chunks that the receiver has not received yet, but that we already got from the sender
-  for (int i = fromChunkId; i < (untilChunkId > 0 ? untilChunkId : share.chunks.length); i++) {
+  // TODO: ça foire tt quand on a supprimé de notre mémoire le chunk (chunk with lid not found)
+  for (int i = fromChunkId; i <= untilChunkId; i++) {
+    if (i > untilChunkId) break;
+
     final chunkData = share.chunks[i];
     if (chunkData != null) {
       share.chunksSentToReceiver[i] = true;
       connection.sendBinary(frameChunk(i, chunkData));
+    } else {
+      print('chunk with lid=$i not found or empty (keys=${share.chunks.keys})');
     }
   }
 
@@ -294,48 +309,12 @@ void _handleSendingPrecedentChunks(SocketConnection connection, Object? data) {
   bool isTherePendingChunks = pendingChunks.isNotEmpty;
   if (!isTherePendingChunks) {
     connection.send('precedentsChunksUpdate', {'remaining': 0, 'message': 'All chunks have been sent to the receiver'});
+    connection.isDownloadResumed = true; // there is not chunk to acknowledge, so we need to resume the download right here
   } else {
-    connection.send('precedentsChunksUpdate', {'remaining': pendingChunks.length, 'message': 'There are still chunks that have not been sent to the receiver'});
+    connection.send('precedentsChunksUpdate', {'remaining': pendingChunks.length, 'lastChunkId': pendingChunks.last.key, 'message': 'There are still chunks that have not been sent to the receiver'});
+    // no need to enable share.canSendChunksToReceiver here, because it will be enabled when the receiver acknowledges the chunks
   }
 
-  share.touch();
-  // no need to enable share.canSendChunksToReceiver here, because it will be enabled when the receiver acknowledges the chunks
-}
-
-void _handleResumeDownloading(SocketConnection connection, Object? data) {
-  if (connection.isDownloadResumed) {
-    connection.send('error', {'error': 'already_resumed', 'message': 'You have already resumed downloading'});
-    return;
-  }
-
-  String? shareId = connection.connectedShareId;
-  if (!connection.isConnectedToShare || shareId == null || shareId.isEmpty) {
-    connection.send('fatal', {'error': 'not_connected_to_share', 'message': 'You are not connected to any share'});
-    unawaited(connection.close(code: ws_status.normalClosure, reason: 'not_connected_to_share'));
-    return;
-  }
-
-  final share = sharedDetails[shareId];
-  if (share == null) {
-    connection.send('fatal', {'error': 'share_deleted', 'message': 'The share you were connected to no longer exists'});
-    unawaited(connection.close(code: ws_status.normalClosure, reason: 'share_deleted'));
-    return;
-  }
-
-  final isSender = share.senderConnection == connection;
-  if (isSender) {
-    connection.send('fatal', {'error': 'sender_cannot_resume', 'message': 'Senders cannot resume downloading'});
-    unawaited(connection.close(code: ws_status.normalClosure, reason: 'sender_cannot_resume'));
-    return;
-  }
-
-  if (share.chunks.isNotEmpty && share.chunks.entries.any((entry) => entry.value != true || (entry.value == true && share.chunksAcknowledgedByReceiver[entry.key] != true))) {
-    connection.send('fatal', {'error': 'incomplete_chunks', 'message': 'You cannot resume downloading if there are chunks that you did not acknowledged yet'});
-    unawaited(connection.close(code: ws_status.normalClosure, reason: 'incomplete_chunks'));
-    return;
-  }
-
-  connection.isDownloadResumed = true;
   share.touch();
 }
 
@@ -367,15 +346,25 @@ void _handleAcknowledgeChunks(SocketConnection connection, Object? data) {
     return;
   }
 
-  List<dynamic>? acknowledgedChunks = data['acknowledgedChunks'] as List<dynamic>?;
-  if (acknowledgedChunks == null || acknowledgedChunks.isEmpty) {
+  List<dynamic>? acknowledgedChunks = [];
+  List<dynamic>? acknowledgedChunksUnparsed = data['chunkIds'] as List<dynamic>?;
+  if (acknowledgedChunksUnparsed == null || acknowledgedChunksUnparsed.isEmpty) {
     connection.send('error', {'error': 'missing_acknowledgedChunks', 'message': 'Missing or empty acknowledgedChunks'});
     unawaited(connection.close(code: ws_status.normalClosure, reason: 'missing_acknowledgedChunks'));
     return;
   } else {
-    for (final dynamic chunkId in acknowledgedChunks) {
+    for (final dynamic chunkIdUnparsed in acknowledgedChunksUnparsed) {
+      int? chunkId = chunkIdUnparsed is int ? chunkIdUnparsed : int.tryParse(chunkIdUnparsed.toString());
+      if (chunkId == null) {
+        connection.send('fatal', {'error': 'invalid_chunkId', 'message': 'Invalid chunkId: $chunkIdUnparsed'});
+        unawaited(connection.close(code: ws_status.normalClosure, reason: 'invalid_chunkId'));
+        return;
+      } else {
+        acknowledgedChunks.add(chunkId);
+      }
+
       if (!share.chunksSentToReceiver.containsKey(chunkId)) {
-        connection.send('fatal', {'error': 'invalid_chunkId', 'message': 'Chunk ID $chunkId was not sent to you'});
+        connection.send('fatal', {'error': 'invalid_chunkId', 'message': 'Chunk ID $chunkId was not sent to you, or has already been acknowledged'});
         unawaited(connection.close(code: ws_status.normalClosure, reason: 'invalid_chunkId'));
         continue;
       }
@@ -384,30 +373,42 @@ void _handleAcknowledgeChunks(SocketConnection connection, Object? data) {
     }
   }
 
-  // Allow the sender to send more chunks to the receiver, based on what the receiver has acknowledged
+  // Allow the sender to send us more chunks, based on what the receiver has acknowledged
   // Example: the receiver has acknowledged 40 MB of chunks, so the sender can send 40 MB more to the receiver
   share.allowedBytesMax = share.allowedBytesMax + acknowledgedChunks.fold<int>(0, (sum, chunkId) {
     final chunkData = share.chunks[chunkId];
     return sum + (chunkData?.length ?? 0);
   });
+  // TODO: prévenir le receiver à chaque fois qu'on update cette variable pour lui permettre de continuer l'envoi s'il était à l'arrêt
 
-  // Check if there is any pending chunks that the receiver has not acknowledged yet, and if so, send them to the receiver again
-  final pendingChunks = share.chunksSentToReceiver.entries.where((entry) => entry.value == true && share.chunksAcknowledgedByReceiver[entry.key] != true).toList();
-  if (pendingChunks.isNotEmpty) {
+  // Check if there is any pending chunks that the receiver has not received yet
+  final pendingChunks = share.chunks.entries.where((entry) => share.chunksSentToReceiver[entry.key] != true && share.chunksAcknowledgedByReceiver[entry.key] != true).toList();
+  if (connection.isDownloadResumed && pendingChunks.isNotEmpty) { // avoid sending chunks if download has not resumed yet
     // Only send a few pending chunks to avoid overwhelming the receiver
-    // Less chunks the receiver has acknowledged, more chunks we send to the receiver
+    // Less chunks the receiver has acknowledged, more chunks we send to the receiver.
+    // Maximum 3 chunks. So if ack:0, send 3. If ack:1, send 2. If ack:2, send 1. If ack:3, send 0.
     int unacknowledgedChunksAmount = pendingChunks.length;
     for (var i = 0; i < pendingChunks.length; i++) {
-      if (i >= (3 - unacknowledgedChunksAmount)) break; // send only a few pending chunks to avoid overwhelming the receiver
+      if (i >= min(3, unacknowledgedChunksAmount)) break;
 
       final entry = pendingChunks[i];
       final chunkId = entry.key;
       final chunkData = share.chunks[chunkId];
+
       if (chunkData != null) {
+        share.chunksSentToReceiver[chunkId] = true;
         connection.sendBinary(frameChunk(chunkId, chunkData));
+      } else {
+        print('chunk with lid=$chunkId not found or empty (keys=${share.chunks.keys})');
       }
-      pendingChunks.remove(entry); // remove the chunk from the pending list after sending it
+
+      // we should not remove the chunk from pendingChunks if we sent them here, because we need to wait for an ack for them
     }
+  }
+
+  if (!connection.isDownloadResumed && pendingChunks.isEmpty) {
+    connection.isDownloadResumed = true;
+    connection.send('downloadResumed', {'message': 'Download has been resumed, you will receive new chunks from the sender'});
   }
 
   // If there is no pending chunks, allow the sender to send more chunks to the receiver

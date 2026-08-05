@@ -54,29 +54,30 @@ class ShareDetails {
   void checkSendingChunksToReceiver() {
     int acknowledgedCount = 0;
     for (int i = 0; i < 3; i++) {
-      final checkChunkId = chunks.keys.isNotEmpty ? chunks.keys.last - i : -1;
+      final checkChunkId = chunksSentToReceiver.keys.toList().reversed.skip(i).firstWhere(
+        (chunkId) => chunksSentToReceiver[chunkId] == true,
+        orElse: () => -1,
+      );
       if (checkChunkId >= 0 && chunksAcknowledgedByReceiver[checkChunkId] == true) {
         acknowledgedCount++;
       }
     }
 
-    if (chunks.length <= 3) {
+    if (chunks.length <= 3) { // we have less than 3 chunks since the beginning, we can send them all
       canSendChunksToReceiver = true;
     } else if (acknowledgedCount < 3) { // means we have less than 3 acknowledged chunks
       canSendChunksToReceiver = false;
-    } else {
+    } else { // means we have at least 3 acknowledged chunks, we can send new chunks
       canSendChunksToReceiver = true;
     }
   }
 
-  // Remove every acknowledged chunks from all Maps
+  // Free up some memory by clearing acknowledged chunks
   void clearAcknowledgedChunks() {
     final acknowledgedChunks = chunksAcknowledgedByReceiver.entries.where((entry) => entry.value == true).toList();
     for (final entry in acknowledgedChunks) {
       final chunkId = entry.key;
-      chunks.remove(chunkId);
-      chunksSentToReceiver.remove(chunkId);
-      chunksAcknowledgedByReceiver.remove(chunkId);
+      if(chunks.containsKey(chunkId)) chunks[chunkId] = null; // only clear the data, keep the key to avoid skipping chunks
     }
   }
 }
@@ -233,6 +234,7 @@ Future<Response> _putChunk(Request request) async {
     share.checkSendingChunksToReceiver();
 
     if (share.canSendChunksToReceiver) {
+      share.chunksSentToReceiver[chunkId] = true;
       share.receiverConnection?.sendBinary(frameChunk(chunkId, data));
     }
   }

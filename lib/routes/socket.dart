@@ -379,7 +379,7 @@ void _handleAcknowledgeChunks(SocketConnection connection, Object? data) {
     final chunkData = share.chunks[chunkId];
     return sum + (chunkData?.length ?? 0);
   });
-  // TODO: prévenir le receiver à chaque fois qu'on update cette variable pour lui permettre de continuer l'envoi s'il était à l'arrêt
+  share.senderConnection?.send('allowedBytesMaxUpdate', {'allowedBytesMax': share.allowedBytesMax, 'message': 'The receiver has acknowledged chunks, you can send more chunks now'});
 
   // Check if there is any pending chunks that the receiver has not received yet
   final pendingChunks = share.chunks.entries.where((entry) => share.chunksSentToReceiver[entry.key] != true && share.chunksAcknowledgedByReceiver[entry.key] != true).toList();

@@ -243,7 +243,6 @@ Future<Response> _putChunk(Request request) async {
     'chunkId': chunkId,
     'bytes': data.length,
     'receivedBytes': share.receivedBytes,
-    'totalSize': share.totalSize,
   });
 }
 

@@ -31,10 +31,12 @@ class ShareDetails {
   String? receiverDeviceName;
   SocketConnection? receiverConnection;
   bool canSendChunksToReceiver = false;
+  List<dynamic> messagesFromReceiverQueue = [];
 
   SocketConnection? senderConnection;
+  List<dynamic> messagesFromSenderQueue = [];
 
-  final Map<int, List<int>> chunks = {};
+  final Map<int, List<int>?> chunks = {};
   final Map<int, bool> chunksSentToReceiver = {};
   final Map<int, bool> chunksAcknowledgedByReceiver = {};
   int receivedBytes = 0;

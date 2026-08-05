@@ -135,6 +135,7 @@ final Map<String, SocketHandler> _handlers = {
   'GetPrecedentsChunks': _handleSendingPrecedentChunks,
   'ResumeDownloading': _handleResumeDownloading,
   'AcknowledgeChunks': _handleAcknowledgeChunks,
+  'SendMsgToOtherWay': _handleSengMsgToOtherWay
 };
 
 void _handleConnectToShare(SocketConnection connection, Object? data) {
@@ -177,6 +178,10 @@ void _handleConnectToShare(SocketConnection connection, Object? data) {
     if (share.receiverDeviceName != null) {
       connection.send('receiverName', {'name': share.receiverDeviceName});
     }
+
+    for (final message in share.messagesFromReceiverQueue) {
+      connection.send('msgFromReceiver', message);
+    }
   }
 
   if (!isSender) { // then, we are a receiver
@@ -205,6 +210,10 @@ void _handleConnectToShare(SocketConnection connection, Object? data) {
 
     if (share.senderConnection != null) {
       share.senderConnection!.send('receiverName', {'name': deviceName});
+    }
+
+    for (final message in share.messagesFromSenderQueue) {
+      connection.send('msgFromSender', message);
     }
   }
 
@@ -405,6 +414,33 @@ void _handleAcknowledgeChunks(SocketConnection connection, Object? data) {
   if (pendingChunks.isEmpty) share.canSendChunksToReceiver = true;
   share.touch();
   share.clearAcknowledgedChunks();
+}
+
+void _handleSengMsgToOtherWay(SocketConnection connection, Object? data) {
+  String? shareId = connection.connectedShareId;
+  if (!connection.isConnectedToShare || shareId == null || shareId.isEmpty) {
+    connection.send('fatal', {'error': 'not_connected_to_share', 'message': 'You are not connected to any share'});
+    unawaited(connection.close(code: ws_status.normalClosure, reason: 'not_connected_to_share'));
+    return;
+  }
+
+  final share = sharedDetails[shareId];
+  if (share == null) {
+    connection.send('fatal', {'error': 'share_deleted', 'message': 'The share you were connected to no longer exists'});
+    unawaited(connection.close(code: ws_status.normalClosure, reason: 'share_deleted'));
+    return;
+  }
+
+  final isSender = share.senderConnection == connection;
+  if (isSender) {
+    share.receiverConnection?.send('msgFromSender', data);
+    share.messagesFromSenderQueue.add(data);
+    return;
+  } else {
+    share.senderConnection?.send('msgFromReceiver', data);
+    share.messagesFromReceiverQueue.add(data);
+    return;
+  }
 }
 
 Handler socketHandler() => webSocketHandler(

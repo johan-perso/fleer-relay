@@ -2,7 +2,6 @@ import 'package:fleer_backend/routes/_router.dart';
 import 'package:fleer_backend/routes/socket.dart';
 import 'package:fleer_backend/utils/load_env.dart';
 import 'package:fleer_backend/utils/globals.dart' as globals;
-import 'package:fleer_backend/utils/repeat.dart';
 
 import 'dart:async';
 import 'dart:io';
@@ -59,4 +58,8 @@ Middleware _catchErrors() {
       return jsonError(500, 'internal_error');
     }
   };
+}
+
+String repeat(String str, int times) {
+  return List.filled(times, str).join();
 }

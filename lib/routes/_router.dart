@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
-import 'package:fleer_backend/routes/shares.dart';
-import 'package:fleer_backend/routes/socket.dart';
-import 'package:fleer_backend/utils/globals.dart' as globals;
+import 'package:fleer_relay/routes/shares.dart';
+import 'package:fleer_relay/routes/socket.dart';
+import 'package:fleer_relay/utils/globals.dart' as globals;
 
 import 'dart:convert';
 import 'package:shelf/shelf.dart';
@@ -19,7 +19,7 @@ Router buildRouter() {
     )
   )
     ..get('/', (Request _) {
-      return jsonOk({ 'message': 'Fleer Backend API is running', 'server': {
+      return jsonOk({ 'message': 'Fleer Relay API is running', 'server': {
         'protocolVersion': globals.protocolVersion,
         'maxDeviceNameLength': globals.maxDeviceNameLength,
         'maxJsonBytes': globals.maxJsonBytes,

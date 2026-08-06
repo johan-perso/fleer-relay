@@ -1,7 +1,7 @@
-import 'package:fleer_backend/routes/_router.dart';
-import 'package:fleer_backend/routes/socket.dart';
-import 'package:fleer_backend/utils/load_env.dart';
-import 'package:fleer_backend/utils/globals.dart' as globals;
+import 'package:fleer_relay/routes/_router.dart';
+import 'package:fleer_relay/routes/socket.dart';
+import 'package:fleer_relay/utils/load_env.dart';
+import 'package:fleer_relay/utils/globals.dart' as globals;
 
 import 'dart:async';
 import 'dart:io';

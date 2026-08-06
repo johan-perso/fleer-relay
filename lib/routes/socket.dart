@@ -1,5 +1,5 @@
-import 'package:fleer_backend/routes/shares.dart';
-import 'package:fleer_backend/utils/globals.dart' as globals;
+import 'package:fleer_relay/routes/shares.dart';
+import 'package:fleer_relay/utils/globals.dart' as globals;
 
 import 'dart:async';
 import 'dart:convert';

@@ -1,7 +1,7 @@
-import 'package:fleer_backend/routes/socket.dart';
-import 'package:fleer_backend/utils/base64.dart';
-import 'package:fleer_backend/utils/globals.dart' as globals;
-import 'package:fleer_backend/routes/_router.dart';
+import 'package:fleer_relay/routes/socket.dart';
+import 'package:fleer_relay/utils/base64.dart';
+import 'package:fleer_relay/utils/globals.dart' as globals;
+import 'package:fleer_relay/routes/_router.dart';
 
 import 'dart:typed_data';
 import 'package:nanoid2/nanoid2.dart';

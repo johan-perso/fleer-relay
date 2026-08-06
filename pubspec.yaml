@@ -1,6 +1,6 @@
-name: fleer_backend
+name: fleer_relay
 publish_to: none
-repository: https://github.com/johan-perso/fleer-backend
+repository: https://github.com/johan-perso/fleer-relay
 
 environment:
   sdk: ^3.12.0

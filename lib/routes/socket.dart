@@ -140,7 +140,8 @@ final Map<String, SocketHandler> _handlers = {
   'ConnectToShare': _handleConnectToShare,
   'GetPrecedentsChunks': _handleSendingPrecedentChunks,
   'AcknowledgeChunks': _handleAcknowledgeChunks,
-  'SendMsgToOtherWay': _handleSengMsgToOtherWay
+  'SendMsgToOtherWay': _handleSengMsgToOtherWay,
+  'LastChunk': _handleLastChunkIndication
 };
 
 void _handleConnectToShare(SocketConnection connection, Object? data) {
@@ -416,6 +417,42 @@ void _handleSengMsgToOtherWay(SocketConnection connection, Object? data) {
     share.messagesFromReceiverQueue.add(data);
     return;
   }
+}
+
+void _handleLastChunkIndication(SocketConnection connection, Object? data) {
+  ShareDetails? share = _checkSocketConnectedShare(connection);
+  if(share == null) return;
+
+  final isSender = share.senderConnection == connection;
+  if (!isSender) {
+    connection.send('fatal', {'error': 'receiver_cannot_indicate_last_chunk', 'message': 'Receivers cannot indicate last chunk'});
+    unawaited(connection.close(code: ws_status.normalClosure, reason: 'receiver_cannot_indicate_last_chunk'));
+    return;
+  }
+
+  if (data is! Map<String, Object?>) {
+    connection.send('fatal', {'error': 'invalid_data', 'message': 'Invalid data format for LastChunk'});
+    unawaited(connection.close(code: ws_status.normalClosure, reason: 'invalid_data'));
+    return;
+  }
+
+  int lastChunkId = 0;
+  if (data['lastChunkId'] is int) {
+    lastChunkId = data['lastChunkId'] as int;
+  } else if (data['lastChunkId'] is String) {
+    lastChunkId = int.tryParse(data['lastChunkId'] as String) ?? 0;
+  }
+
+  if (lastChunkId < share.chunks.keys.last) {
+    connection.send('fatal', {'error': 'lastChunkId_too_low', 'message': 'lastChunkId cannot be lower than the last chunkId sent to the receiver'});
+    unawaited(connection.close(code: ws_status.normalClosure, reason: 'lastChunkId_too_low'));
+    return;
+  }
+
+  share.lastChunkId = lastChunkId;
+  share.touch();
+
+  share.receiverConnection?.send('lastChunkIndicated', {'lastChunkId': lastChunkId, 'message': 'The sender has indicated the last chunk to be sent'});
 }
 
 ShareDetails? _checkSocketConnectedShare(SocketConnection connection) {

@@ -31,9 +31,9 @@ Future<void> _serve() async {
   pipeline = pipeline.addMiddleware(_catchErrors());
 
   final Handler handler = pipeline.addHandler(buildRouter().call);
-  shelf_io.serveRequests(server, handler);
+  shelf_io.serveRequests(server, handler, poweredByHeader: 'Fleer Relay Server');
 
-  stdout.writeln('Server listening on http://0.0.0.0:${globals.port}');
+  stdout.writeln('Fleer Relay Server listening on http://0.0.0.0:${globals.port}');
   stdout.writeln(repeat('-', 40));
   stdout.writeln('Max JSON body size:      ${globals.maxJsonBytes} bytes');
   stdout.writeln('Max chunked file size:   ${globals.maxChunkBytes} bytes');

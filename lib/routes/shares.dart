@@ -1,8 +1,8 @@
 import 'package:fleer_relay/routes/socket.dart';
-import 'package:fleer_relay/utils/base64.dart';
 import 'package:fleer_relay/utils/globals.dart' as globals;
 import 'package:fleer_relay/routes/_router.dart';
 
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:nanoid2/nanoid2.dart';
 import 'package:shelf/shelf.dart';
@@ -172,7 +172,7 @@ Future<Response> _readShare(Request request) async {
     'encryptionProtocolIndicator': share.encryptionProtocolIndicator,
     'primaryDetails': share.primaryDetails == null
       ? null
-      : toBase64Url(share.primaryDetails!),
+      : base64Url.encode(share.primaryDetails!),
   });
 }
 

@@ -15,13 +15,11 @@ enum ShareRole {
 
 class ShareDetails {
   ShareDetails({
-    required this.encryptionProtocolIndicator,
     required this.filesCount,
     required this.foldersCount,
     required this.totalSize,
   }) : creation = DateTime.now().toUtc(), lastActivity = DateTime.now().toUtc();
 
-  final int encryptionProtocolIndicator;
   final int filesCount;
   final int foldersCount;
   int totalSize;
@@ -123,11 +121,6 @@ Future<Response> _createShare(Request request) async {
     throw HttpError(400, 'body_invalid_content', 'Your request is missing a valid JSON body');
   }
 
-  final encryptionProtocolIndicator = _readCount(body, 'encryptionProtocolIndicator');
-  if (encryptionProtocolIndicator < 1) {
-    throw HttpError(400, 'invalid_encryptionProtocolIndicator', 'encryptionProtocolIndicator must be at least 1');
-  }
-
   final filesCount = _readCount(body, 'filesCount');
   final foldersCount = _readCount(body, 'foldersCount');
 
@@ -139,7 +132,6 @@ Future<Response> _createShare(Request request) async {
   final shareId = _generateShareId();
 
   sharedDetails[shareId] = ShareDetails(
-    encryptionProtocolIndicator: encryptionProtocolIndicator,
     filesCount: filesCount,
     foldersCount: foldersCount,
     totalSize: totalSize,
@@ -171,11 +163,10 @@ Future<Response> _readShare(Request request) async {
     'receivedBytes': share.receivedBytes,
     'totalSize': share.totalSize,
     'creation': share.creation.toIso8601String(),
-    'encryptionProtocolIndicator': share.encryptionProtocolIndicator,
     'lastChunkId': share.lastChunkId,
     'primaryDetails': share.primaryDetails == null
       ? null
-      : base64Url.encode(share.primaryDetails!),
+      : base64.encode(share.primaryDetails!),
   });
 }
 

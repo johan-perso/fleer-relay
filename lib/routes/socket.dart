@@ -218,6 +218,10 @@ void _handleConnectToShare(SocketConnection connection, Object? data) {
       share.senderConnection!.send('receiverName', {'name': deviceName});
     }
 
+    if (share.lastChunkId != null) {
+      connection.send('lastChunkIndicated', {'lastChunkId': share.lastChunkId, 'message': 'The sender has indicated the last chunk to be sent'});
+    }
+
     for (final message in share.messagesFromSenderQueue) {
       connection.send('msgFromSender', message);
     }
@@ -305,7 +309,7 @@ void _handleSendingPrecedentChunks(SocketConnection connection, Object? data) {
     connection.send('precedentsChunksUpdate', {'remaining': 0, 'message': 'All chunks have been sent to the receiver'});
     connection.isDownloadResumed = true; // there is no chunk to acknowledge, so we need to resume the download right here
   } else {
-    connection.send('precedentsChunksUpdate', {'remaining': pendingChunks.length, 'lastChunkId': pendingChunks.last.key, 'message': 'There are still chunks that have not been sent to the receiver'});
+    connection.send('precedentsChunksUpdate', {'remaining': pendingChunks.length, 'message': 'There are still chunks that have not been sent to the receiver'});
     // no need to enable share.canSendChunksToReceiver here, because it will be enabled when the receiver acknowledges the chunks
   }
 

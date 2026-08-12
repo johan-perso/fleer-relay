@@ -96,11 +96,11 @@ class SocketRegistry {
       }
       if (share.receiverConnection == connection) {
         share.receiverConnection = null;
+        share.canSendChunksToReceiver = false;
+        share.chunksSentToReceiver.clear();
+        share.chunksAcknowledgedByReceiver.clear();
       }
 
-      share.chunksAcknowledgedByReceiver.clear();
-      share.chunksSentToReceiver.clear();
-      share.canSendChunksToReceiver = false;
       share.touch();
     }
 

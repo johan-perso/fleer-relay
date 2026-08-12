@@ -230,7 +230,14 @@ void _handleConnectToShare(SocketConnection connection, Object? data) {
   share.touch();
   connection.connectedShareId = shareId;
   connection.isConnectedToShare = true;
-  connection.send('connectedToShare', {'shareId': shareId, 'isSender': isSender});
+  connection.send(
+    'connectedToShare',
+    {
+      'shareId': shareId,
+      'isSenderConnected': share.senderConnection != null,
+      'isReceiverConnected': share.receiverConnection != null,
+      'message': 'Successfully connected to share, you will receive new chunks and messages from the other side',
+    });
 }
 
 void _handleSendingPrecedentChunks(SocketConnection connection, Object? data) {

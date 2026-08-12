@@ -443,7 +443,7 @@ void _handleLastChunkIndication(SocketConnection connection, Object? data) {
     lastChunkId = int.tryParse(data['lastChunkId'] as String) ?? 0;
   }
 
-  if (lastChunkId < share.chunks.keys.last) {
+  if (lastChunkId > share.chunks.keys.last) {
     connection.send('fatal', {'error': 'lastChunkId_too_low', 'message': 'lastChunkId cannot be lower than the last chunkId sent to the receiver'});
     unawaited(connection.close(code: ws_status.normalClosure, reason: 'lastChunkId_too_low'));
     return;

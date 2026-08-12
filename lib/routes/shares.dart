@@ -17,7 +17,7 @@ class ShareDetails {
   ShareDetails({
     required this.filesCount,
     required this.foldersCount,
-    required this.totalSize,
+    required this.totalSize, // approximate total size of all files, doesn't include encryption overhead over time - clients can send more than the size they declared
   }) : creation = DateTime.now().toUtc(), lastActivity = DateTime.now().toUtc();
 
   final int filesCount;
@@ -97,6 +97,7 @@ class ShareDetails {
     chunks.clear();
     chunksSentToReceiver.clear();
     chunksAcknowledgedByReceiver.clear();
+    lastChunkId = null;
 
     receiverConnection?.send('restartTransfer', {'message': textualReason});
     senderConnection?.send('restartTransfer', {'message': textualReason});
@@ -246,10 +247,6 @@ Future<Response> _putChunk(Request request) async {
     share.chunks[chunkId] = data;
     share.receivedBytes += data.length;
     share.touch();
-
-    if (share.totalSize < share.receivedBytes) { // clients can send more than the size they declared
-      share.totalSize = share.receivedBytes;
-    }
 
     // Check if the receiver should receive this chunk
     share.clearAcknowledgedChunks();

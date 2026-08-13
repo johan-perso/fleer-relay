@@ -188,6 +188,10 @@ void _handleConnectToShare(SocketConnection connection, Object? data) {
     for (final message in share.messagesFromReceiverQueue) {
       connection.send('msgFromReceiver', message);
     }
+
+    if (share.receiverConnection != null) {
+      share.receiverConnection!.send('senderStatus', {'connected': true, 'message': 'A sender has connected to the share'});
+    }
   }
 
   if (!isSender) { // then, we are a receiver
@@ -216,6 +220,7 @@ void _handleConnectToShare(SocketConnection connection, Object? data) {
 
     if (share.senderConnection != null) {
       share.senderConnection!.send('receiverName', {'name': deviceName});
+      share.receiverConnection!.send('receiverStatus', {'connected': true, 'message': 'A receiver has connected to the share'});
     }
 
     if (share.lastChunkId != null) {
@@ -520,12 +525,12 @@ void _onConnect(WebSocketChannel channel) {
 void _warnDisconnection(SocketConnection connection, int? code) {
   // If the connection was a receiver, notify the sender that it has disconnected
   if (connection.isConnectedToShare && connection.shareRole == ShareRole.receiver) {
-    sharedDetails[connection.connectedShareId]?.senderConnection?.send('warning', {'error': 'receiver_disconnected', 'message': 'Receiver disconnected unexpectedly', 'code': code});
+    sharedDetails[connection.connectedShareId]?.senderConnection?.send('receiverStatus', {'connected': false, 'message': 'Receiver has disconnected from the share'});
   }
 
   // If the connection was a sender, notify the receiver that it has disconnected
   if (connection.isConnectedToShare && connection.shareRole == ShareRole.sender) {
-    sharedDetails[connection.connectedShareId]?.receiverConnection?.send('warning', {'error': 'sender_disconnected', 'message': 'Sender disconnected unexpectedly', 'code': code});
+    sharedDetails[connection.connectedShareId]?.receiverConnection?.send('senderStatus', {'connected': false, 'message': 'Sender has disconnected from the share'});
   }
 
   // Touch the share details to update properties

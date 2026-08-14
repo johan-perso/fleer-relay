@@ -141,7 +141,8 @@ final Map<String, SocketHandler> _handlers = {
   'GetPrecedentsChunks': _handleSendingPrecedentChunks,
   'AcknowledgeChunks': _handleAcknowledgeChunks,
   'SendMsgToOtherWay': _handleSengMsgToOtherWay,
-  'LastChunk': _handleLastChunkIndication
+  'LastChunk': _handleLastChunkIndication,
+  'DeleteTransfer': _handleTransferDeletion,
 };
 
 void _handleConnectToShare(SocketConnection connection, Object? data) {
@@ -190,7 +191,7 @@ void _handleConnectToShare(SocketConnection connection, Object? data) {
     }
 
     if (share.receiverConnection != null) {
-      share.receiverConnection!.send('senderStatus', {'connected': true, 'message': 'A sender has connected to the share'});
+      share.receiverConnection!.send('senderStatus', {'connected': true, 'message': 'A sender has/is connected to the share'});
     }
   }
 
@@ -220,7 +221,7 @@ void _handleConnectToShare(SocketConnection connection, Object? data) {
 
     if (share.senderConnection != null) {
       share.senderConnection!.send('receiverName', {'name': deviceName});
-      share.receiverConnection!.send('receiverStatus', {'connected': true, 'message': 'A receiver has connected to the share'});
+      share.receiverConnection!.send('receiverStatus', {'connected': true, 'message': 'A receiver has/is connected to the share'});
     }
 
     if (share.lastChunkId != null) {
@@ -469,6 +470,33 @@ void _handleLastChunkIndication(SocketConnection connection, Object? data) {
   share.touch();
 
   share.receiverConnection?.send('lastChunkIndicated', {'lastChunkId': lastChunkId, 'message': 'The sender has indicated the last chunk to be sent'});
+}
+
+void _handleTransferDeletion(SocketConnection connection, Object? data) {
+  ShareDetails? share = _checkSocketConnectedShare(connection);
+  if(share == null) return;
+
+  final isSender = share.senderConnection == connection;
+  if (!isSender) {
+    connection.send('fatal', {'error': 'receiver_cannot_delete_transfer', 'message': 'Receivers cannot delete the transfer'});
+    unawaited(connection.close(code: ws_status.normalClosure, reason: 'receiver_cannot_delete_transfer'));
+    return;
+  }
+
+  share.touch();
+  share.canSendChunksToReceiver = false;
+  share.uploadCanStart = false;
+
+  share.messagesFromReceiverQueue.clear();
+  share.messagesFromSenderQueue.clear();
+
+  // Notify both sender and receiver that the share is being deleted
+  share.receiverConnection?.send('shareDeleted', {'message': 'The share has been deleted by the sender.'});
+  share.senderConnection?.send('shareDeleted', {'message': 'The share has been deleted by the sender.'});
+  share.receiverConnection?.close();
+  share.senderConnection?.close();
+
+  sharedDetails.removeWhere((key, value) => key == share.id);
 }
 
 ShareDetails? _checkSocketConnectedShare(SocketConnection connection) {

@@ -45,6 +45,8 @@ class ShareDetails {
   List<int>? primaryDetails;
   bool uploadCanStart = false;
 
+  String get id => sharedDetails.entries.firstWhere((entry) => entry.value == this).key;
+
   void touch() {
     lastActivity = DateTime.now().toUtc();
   }

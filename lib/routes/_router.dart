@@ -23,6 +23,7 @@ Router buildRouter() {
         'protocolVersion': globals.protocolVersion,
         'maxDeviceNameLength': globals.maxDeviceNameLength,
         'maxJsonBytes': globals.maxJsonBytes,
+        'maxChunkBytes': globals.maxChunkBytes,
       } });
     })
     ..post('/shares/read', sharesRoutes().call)

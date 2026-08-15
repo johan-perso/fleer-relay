@@ -51,6 +51,19 @@ class ShareDetails {
     lastActivity = DateTime.now().toUtc();
   }
 
+  // Check if messages take way too much memory and if so, clear them and restart transfer
+  void checkMessagesMemoryUsage() {
+    final messagesFromReceiverSize = messagesFromReceiverQueue.fold<int>(0, (sum, message) => sum + utf8.encode(jsonEncode(message)).length);
+    final messagesFromSenderSize = messagesFromSenderQueue.fold<int>(0, (sum, message) => sum + utf8.encode(jsonEncode(message)).length);
+    final num totalMessagesSize = messagesFromReceiverSize + messagesFromSenderSize;
+
+    final int maxSize = globals.maxCachedBytes! * 3;
+
+    if (totalMessagesSize > maxSize) {
+      restartTransfer(textualReason: 'The entire transfer will be restarted because too many messages were sent (${totalMessagesSize} bytes). The maximum total allowed size is ${maxSize} bytes');
+    }
+  }
+
   // Check if we should send chunks to the receiver based on the last 3 acknowledged chunks.
   // If there is at least 3 not acknowledged chunks, we pause sending new chunks to the receiver to avoid overwhelming it.
   void checkSendingChunksToReceiver() {
@@ -103,7 +116,6 @@ class ShareDetails {
 
     receiverConnection?.send('restartTransfer', {'message': textualReason});
     senderConnection?.send('restartTransfer', {'message': textualReason});
-    receiverConnection?.isDownloadResumed = true;
 
     touch();
   }

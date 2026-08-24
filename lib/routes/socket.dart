@@ -101,7 +101,7 @@ class SocketRegistry {
         share.chunksAcknowledgedByReceiver.clear();
       }
 
-      share.touch();
+      // share.touch(); // not needed because a deconnection should not lock the share from being auto deleted for another 5 minutes
     }
 
     _connections.remove(connection.id);
@@ -485,20 +485,7 @@ void _handleTransferDeletion(SocketConnection connection, Object? data) {
     return;
   }
 
-  share.touch();
-  share.canSendChunksToReceiver = false;
-  share.uploadCanStart = false;
-
-  share.messagesFromReceiverQueue.clear();
-  share.messagesFromSenderQueue.clear();
-
-  // Notify both sender and receiver that the share is being deleted
-  share.receiverConnection?.send('shareDeleted', {'message': 'The share has been deleted by the sender.'});
-  share.senderConnection?.send('shareDeleted', {'message': 'The share has been deleted by the sender.'});
-  share.receiverConnection?.close();
-  share.senderConnection?.close();
-
-  sharedDetails.removeWhere((key, value) => key == share.id);
+  share.deleteShare();
 }
 
 ShareDetails? _checkSocketConnectedShare(SocketConnection connection) {

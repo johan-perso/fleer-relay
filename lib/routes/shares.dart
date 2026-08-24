@@ -15,10 +15,14 @@ enum ShareRole {
 
 class ShareDetails {
   ShareDetails({
+    required this.id,
     required this.filesCount,
     required this.foldersCount,
     required this.totalSize, // approximate total size of all files, doesn't include encryption overhead over time - clients can send more than the size they declared
   }) : creation = DateTime.now().toUtc(), lastActivity = DateTime.now().toUtc();
+
+  final String id;
+  bool _deleted = false;
 
   final int filesCount;
   final int foldersCount;
@@ -44,8 +48,6 @@ class ShareDetails {
 
   List<int>? primaryDetails;
   bool uploadCanStart = false;
-
-  String get id => sharedDetails.entries.firstWhere((entry) => entry.value == this).key;
 
   void touch() {
     lastActivity = DateTime.now().toUtc();
@@ -119,6 +121,28 @@ class ShareDetails {
 
     touch();
   }
+
+  // Method to properly delete the share
+  void deleteShare() {
+    if (_deleted) return;
+    _deleted = true;
+
+    canSendChunksToReceiver = false;
+    uploadCanStart = false;
+
+    touch(); // avoid the share being auto deleted while we are deleting it manually
+
+    messagesFromReceiverQueue.clear();
+    messagesFromSenderQueue.clear();
+
+    // Notify both sender and receiver that the share is being deleted
+    receiverConnection?.send('shareDeleted', {'message': 'The share has been deleted by the sender.'});
+    senderConnection?.send('shareDeleted', {'message': 'The share has been deleted by the sender.'});
+    receiverConnection?.close();
+    senderConnection?.close();
+
+    sharedDetails.removeWhere((key, value) => key == id);
+  }
 }
 
 final sharedDetails = <String, ShareDetails>{};
@@ -147,6 +171,7 @@ Future<Response> _createShare(Request request) async {
   final shareId = _generateShareId();
 
   sharedDetails[shareId] = ShareDetails(
+    id: shareId,
     filesCount: filesCount,
     foldersCount: foldersCount,
     totalSize: totalSize,

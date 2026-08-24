@@ -1,5 +1,7 @@
 import 'package:fleer_relay/routes/_router.dart';
+import 'package:fleer_relay/routes/shares.dart';
 import 'package:fleer_relay/routes/socket.dart';
+import 'package:fleer_relay/utils/getAvailableRam.dart';
 import 'package:fleer_relay/utils/load_env.dart';
 import 'package:fleer_relay/utils/globals.dart' as globals;
 
@@ -40,8 +42,28 @@ Future<void> _serve() async {
   stdout.writeln('Environment:             ${globals.isProduction ? 'production' : 'development'}');
   stdout.writeln(repeat('-', 40));
 
+  // Simple check every minute to avoid taking too much memory
   Timer.periodic(const Duration(minutes: 1), (_) {
+    // Clear inactive WebSocket connections to free up memory
     socketRegistry.cleanInactiveConnections();
+
+    // Clear shares that are inactive
+    for(final share in sharedDetails.values.toList()) {
+      DateTime lastActivity = share.lastActivity;
+      bool isAnyoneConnected = share.receiverConnection != null || share.senderConnection != null;
+
+      // Delete the share if nobody is connected and the share has been inactive for more than 5 minutes
+      if(!isAnyoneConnected && DateTime.now().difference(lastActivity) > const Duration(minutes: 5)) {
+        share.deleteShare();
+        continue;
+      }
+
+      // Delete the share if it has been inactive for more than 10 minutes, even if someone is connected
+      if(DateTime.now().difference(lastActivity) > const Duration(minutes: 10)) {
+        share.deleteShare();
+        continue;
+      }
+    }
   });
 }
 

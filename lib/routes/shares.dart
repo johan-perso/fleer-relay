@@ -38,31 +38,28 @@ class ShareDetails {
   SocketConnection? senderConnection;
   List<dynamic> messagesFromSenderQueue = [];
 
-  final Map<int, List<int>?> chunks = {};
+  final Map<int, Uint8List?> chunks = {};
   final Map<int, bool> chunksSentToReceiver = {};
   final Map<int, bool> chunksAcknowledgedByReceiver = {};
   int? lastChunkId = null; // does not refer to the last chunk received, but to the very last chunk that the sender will send before ending the transfer
 
   int receivedBytes = 0;
   int allowedBytesMax = 0;
+  int _cachedBytes = 0;
 
-  List<int>? primaryDetails;
+  Uint8List? primaryDetails;
   bool uploadCanStart = false;
 
   void touch() {
     lastActivity = DateTime.now().toUtc();
   }
 
-  // Check if messages take way too much memory and if so, clear them and restart transfer
-  void checkMessagesMemoryUsage() {
-    final messagesFromReceiverSize = messagesFromReceiverQueue.fold<int>(0, (sum, message) => sum + utf8.encode(jsonEncode(message)).length);
-    final messagesFromSenderSize = messagesFromSenderQueue.fold<int>(0, (sum, message) => sum + utf8.encode(jsonEncode(message)).length);
-    final num totalMessagesSize = messagesFromReceiverSize + messagesFromSenderSize;
-
+  // Check if chunks+messages take way too much memory and if so, clear them and restart transfer
+  void checkMemoryUsage() {
     final int maxSize = globals.maxCachedBytes! * 3;
 
-    if (totalMessagesSize > maxSize) {
-      restartTransfer(textualReason: 'The entire transfer will be restarted because too many messages were sent (${totalMessagesSize} bytes). The maximum total allowed size is ${maxSize} bytes');
+    if (_cachedBytes > maxSize) {
+      restartTransfer(textualReason: 'The entire transfer will be restarted because too many messages were sent (${_cachedBytes} bytes). The maximum total allowed size is ${maxSize} bytes');
     }
   }
 
@@ -94,7 +91,10 @@ class ShareDetails {
     final acknowledgedChunks = chunksAcknowledgedByReceiver.entries.where((entry) => entry.value == true).toList();
     for (final entry in acknowledgedChunks) {
       final chunkId = entry.key;
-      if(chunks.containsKey(chunkId)) chunks[chunkId] = null; // only clear the data, keep the key to avoid skipping chunks
+      if(chunks.containsKey(chunkId)) {
+        _cachedBytes -= chunks[chunkId]?.length ?? 0;
+        chunks[chunkId] = null; // only clear the data, keep the key to avoid skipping chunks
+      }
     }
   }
 
@@ -284,8 +284,10 @@ Future<Response> _putChunk(Request request) async {
     }
 
     share.chunks[chunkId] = data;
+    share._cachedBytes += data.length;
     share.receivedBytes += data.length;
     share.touch();
+    share.checkMemoryUsage();
 
     // Check if the receiver should receive this chunk
     share.clearAcknowledgedChunks();

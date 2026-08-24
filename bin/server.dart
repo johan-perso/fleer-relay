@@ -54,13 +54,13 @@ Future<void> _serve() async {
 
       // Delete the share if nobody is connected and the share has been inactive for more than 5 minutes
       if(!isAnyoneConnected && DateTime.now().difference(lastActivity) > const Duration(minutes: 5)) {
-        share.deleteShare();
+        share.deleteShare(textualReason: 'The share has been deleted because nobody was connected and it has been inactive for more than 5 minutes.');
         continue;
       }
 
       // Delete the share if it has been inactive for more than 10 minutes, even if someone is connected
       if(DateTime.now().difference(lastActivity) > const Duration(minutes: 10)) {
-        share.deleteShare();
+        share.deleteShare(textualReason: 'The share has been deleted because it has been inactive for more than 10 minutes.');
         continue;
       }
     }

@@ -3,6 +3,7 @@ import 'package:fleer_relay/utils/globals.dart' as globals;
 import 'package:fleer_relay/routes/_router.dart';
 
 import 'dart:convert';
+import 'dart:collection';
 import 'dart:typed_data';
 import 'package:nanoid2/nanoid2.dart';
 import 'package:shelf/shelf.dart';
@@ -22,6 +23,7 @@ class ShareDetails {
   }) : creation = DateTime.now().toUtc(), lastActivity = DateTime.now().toUtc();
 
   final String id;
+  int _restartsCount = 0;
   bool _deleted = false;
 
   final int filesCount;
@@ -33,15 +35,15 @@ class ShareDetails {
   String? receiverDeviceName;
   SocketConnection? receiverConnection;
   bool canSendChunksToReceiver = false;
-  List<dynamic> messagesFromReceiverQueue = [];
+  final Queue<dynamic> messagesFromReceiverQueue = ListQueue();
 
   SocketConnection? senderConnection;
-  List<dynamic> messagesFromSenderQueue = [];
+  final Queue<dynamic> messagesFromSenderQueue = ListQueue();
 
   final Map<int, Uint8List?> chunks = {};
   final Map<int, bool> chunksSentToReceiver = {};
   final Map<int, bool> chunksAcknowledgedByReceiver = {};
-  int? lastChunkId = null; // does not refer to the last chunk received, but to the very last chunk that the sender will send before ending the transfer
+  int? lastChunkId; // does not refer to the last chunk received, but to the very last chunk that the sender will send before ending the transfer
 
   int receivedBytes = 0;
   int allowedBytesMax = 0;
@@ -102,6 +104,13 @@ class ShareDetails {
   void restartTransfer({
     String? textualReason = 'The entire transfer will be restarted because the sender need to send again a few data that were already sent to the receiver'
   }) {
+    // Delete the transfer if we restarted it too many times (to avoid infinite loops)
+    if (_deleted) return;
+    if (_restartsCount >= 4) {
+      deleteShare(textualReason: 'The share has been deleted because it was restarted too many times (${_restartsCount} times).');
+      return;
+    }
+
     receivedBytes = 0;
     allowedBytesMax = globals.maxCachedBytes!;
 
@@ -120,10 +129,13 @@ class ShareDetails {
     senderConnection?.send('restartTransfer', {'message': textualReason});
 
     touch();
+    _restartsCount++;
   }
 
   // Method to properly delete the share
-  void deleteShare() {
+  void deleteShare({
+    String? textualReason = 'The share has been deleted, either by the sender, or because it has been inactive for too long.'
+  }) {
     if (_deleted) return;
     _deleted = true;
 
@@ -136,8 +148,8 @@ class ShareDetails {
     messagesFromSenderQueue.clear();
 
     // Notify both sender and receiver that the share is being deleted
-    receiverConnection?.send('shareDeleted', {'message': 'The share has been deleted by the sender.'});
-    senderConnection?.send('shareDeleted', {'message': 'The share has been deleted by the sender.'});
+    receiverConnection?.send('shareDeleted', {'message': textualReason});
+    senderConnection?.send('shareDeleted', {'message': textualReason});
     receiverConnection?.close();
     senderConnection?.close();
 

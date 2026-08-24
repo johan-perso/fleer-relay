@@ -346,7 +346,7 @@ void _handleAcknowledgeChunks(SocketConnection connection, Object? data) {
     return;
   }
 
-  List<dynamic>? acknowledgedChunks = [];
+  List<int>? acknowledgedChunks = [];
   List<dynamic>? acknowledgedChunksUnparsed = data['chunkIds'] as List<dynamic>?;
   if (acknowledgedChunksUnparsed == null || acknowledgedChunksUnparsed.isEmpty) {
     connection.send('error', {'error': 'missing_acknowledgedChunks', 'message': 'Missing or empty acknowledgedChunks'});

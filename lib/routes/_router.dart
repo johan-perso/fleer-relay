@@ -18,13 +18,24 @@ Router buildRouter() {
       message: 'The requested endpoint does not exist'
     )
   )
-    ..get('/', (Request _) {
-      return jsonOk({ 'message': 'Fleer Relay API is running', 'server': {
-        'protocolVersion': globals.protocolVersion,
-        'maxDeviceNameLength': globals.maxDeviceNameLength,
-        'maxJsonBytes': globals.maxJsonBytes,
-        'maxChunkBytes': globals.maxChunkBytes,
-      } });
+    ..get('/', (Request _) { // health/status endpoint
+      if (globals.availableRam == null) {
+        throw HttpError(503, 'server_not_ready', 'The server is not ready yet. Please try again in a few seconds.');
+      }
+      if (!isRamSufficientForNewShare()) {
+        throw HttpError(503, 'server_too_busy', 'The server is processing too many transfers at the moment. Please try again in a few seconds.');
+      }
+
+      return jsonOk({
+        'message': 'Fleer Relay API is running',
+        'sharesCreationAllowed': isRamSufficientForNewShare(),
+        'server': {
+          'protocolVersion': globals.protocolVersion,
+          'maxDeviceNameLength': globals.maxDeviceNameLength,
+          'maxJsonBytes': globals.maxJsonBytes,
+          'maxChunkBytes': globals.maxChunkBytes,
+        }
+      });
     })
     ..post('/shares/read', sharesRoutes().call)
     ..get('/shares/updates', socketHandler())
@@ -97,4 +108,30 @@ Future<Uint8List> readBinaryBody(Request request, {required int maxBytes}) async
     }
   }
   return builder.takeBytes();
+}
+
+bool isRamSufficientForNewShare() {
+  if (globals.availableRam == null) {
+    return false;
+  }
+  if (globals.availableRam! < globals.maxCachedBytes! * 4) { // a share can use up to 2*maxCachedBytes (1*chunks and 1*messages), adding a safety margin
+    return false;
+  }
+  if (globals.availableRam! < 100 * 1024 * 1024) { // at least 100 MiB of RAM should be available on the host
+    return false;
+  }
+  return true;
+}
+
+bool isRamSufficientForChunkSave() {
+  if (globals.availableRam == null) {
+    return false;
+  }
+  if (globals.availableRam! < globals.maxCachedBytes!) {
+    return false;
+  }
+  if (globals.availableRam! < 100 * 1024 * 1024) { // at least 100 MiB of RAM should be available on the host
+    return false;
+  }
+  return true;
 }

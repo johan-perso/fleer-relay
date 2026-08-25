@@ -167,6 +167,13 @@ Router sharesRoutes() {
 }
 
 Future<Response> _createShare(Request request) async {
+  if (globals.availableRam == null) {
+    throw HttpError(503, 'server_not_ready', 'The server is not ready yet. Please try again in a few seconds.');
+  }
+  if (!isRamSufficientForNewShare()) { // a share can use up to 2*maxCachedBytes (1*chunks and 1*messages), adding a safety margin
+    throw HttpError(503, 'server_too_busy', 'The server is processing too many transfers at the moment. Please try again in a few seconds.');
+  }
+
   final body = await readJsonBody(request, maxBytes: globals.maxJsonBytes);
   if (body is! Map<String, Object?>) {
     throw HttpError(400, 'body_invalid_content', 'Your request is missing a valid JSON body');
@@ -223,6 +230,10 @@ Future<Response> _readShare(Request request) async {
 }
 
 Future<Response> _putChunk(Request request) async {
+  if (!isRamSufficientForChunkSave()) {
+    throw HttpError(503, 'server_too_busy', 'The server is processing too many transfers at the moment. Please try again in a few seconds.');
+  }
+
   final shareId = request.url.queryParameters['shareId'];
   if (shareId == null || shareId.isEmpty) {
     throw HttpError(400, 'missing_shareId', 'Missing shareId query parameter');

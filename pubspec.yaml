@@ -13,4 +13,4 @@ dependencies:
   shelf_multipart: 2.0.1
   shelf_web_socket: 3.0.0
   web_socket_channel: 3.0.3
-  system_info3: 4.0.2
+  ffi: 2.2.0

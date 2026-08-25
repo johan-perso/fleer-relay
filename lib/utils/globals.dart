@@ -7,3 +7,5 @@ int? port;
 int? maxChunkBytes;
 int? maxCachedBytes;
 bool isProduction = false;
+
+int? availableRam;

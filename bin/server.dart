@@ -10,6 +10,8 @@ import 'dart:io';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
+DateTime? lastAvailableRamCheck;
+
 Future<void> main() async {
   globals.port = getValueFromEnv(key: 'PORT', fallback: 8080, type: int);
   globals.maxChunkBytes = getValueFromEnv(key: 'MAX_CHUNK_BYTES', fallback: (10 << 20), type: int); // 10 MiB
@@ -64,6 +66,16 @@ Future<void> _serve() async {
         continue;
       }
     }
+  });
+
+  // Check available amount of RAM every 30 seconds (it need to be checked often but not too often, even if it's not really expensive to run)
+  Timer.periodic(const Duration(seconds: 5), (_) async {
+    if (lastAvailableRamCheck != null && DateTime.now().difference(lastAvailableRamCheck!) < const Duration(seconds: 30)) {
+      return; // Avoid checking too often
+    }
+
+    globals.availableRam = await readMemoryInfo().available;
+    lastAvailableRamCheck = DateTime.now();
   });
 }
 

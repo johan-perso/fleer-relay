@@ -34,7 +34,12 @@ Router buildRouter() {
           'maxDeviceNameLength': globals.maxDeviceNameLength,
           'maxJsonBytes': globals.maxJsonBytes,
           'maxChunkBytes': globals.maxChunkBytes,
-        }
+        },
+        'relay': {
+          'name': globals.relayName,
+          'contactEmail': globals.relayContactEmail,
+          'associatedLinks': globals.relayAssociatedLinks,
+        },
       });
     })
     ..post('/shares/read', sharesRoutes().call)

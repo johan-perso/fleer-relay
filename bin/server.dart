@@ -18,6 +18,12 @@ Future<void> main() async {
   globals.maxCachedBytes = getValueFromEnv(key: 'MAX_CACHED_BYTES', fallback: (100 << 20), type: int); // 100 MiB
   globals.isProduction = getValueFromEnv(key: 'ENV', fallback: 'dev', type: String) == 'production';
 
+  globals.relayName = getValueFromEnv(key: 'RELAY_NAME', fallback: null, type: String);
+  globals.relayContactEmail = getValueFromEnv(key: 'RELAY_CONTACT_EMAIL', fallback: null, type: String);
+  for (final linkEnvKey in ['RELAY_ASSOCIATED_WEBSITE', 'RELAY_ASSOCIATED_GITHUB', 'RELAY_ASSOCIATED_GITLAB', 'RELAY_ASSOCIATED_TWITTER', 'RELAY_ASSOCIATED_INSTAGRAM', 'RELAY_ASSOCIATED_DISCORD', 'RELAY_ASSOCIATED_TELEGRAM', 'RELAY_ASSOCIATED_MASTODON', 'RELAY_ASSOCIATED_THREADS', 'RELAY_ASSOCIATED_BLUESKY', 'RELAY_ASSOCIATED_MATRIX']) {
+    globals.relayAssociatedLinks[linkEnvKey.toLowerCase().replaceFirst('relay_associated_', '')] = getValueFromEnv(key: linkEnvKey, fallback: null, type: String) ?? '';
+  }
+
   await _serve();
 }
 

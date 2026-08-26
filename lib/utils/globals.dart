@@ -8,4 +8,8 @@ int? maxChunkBytes;
 int? maxCachedBytes;
 bool isProduction = false;
 
+String? relayName;
+String? relayContactEmail;
+Map<String, String> relayAssociatedLinks = {};
+
 int? availableRam;

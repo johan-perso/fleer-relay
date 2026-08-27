@@ -34,6 +34,7 @@ Router buildRouter() {
           'maxDeviceNameLength': globals.maxDeviceNameLength,
           'maxJsonBytes': globals.maxJsonBytes,
           'maxChunkBytes': globals.maxChunkBytes,
+          'maxCachedBytes': globals.maxCachedBytes,
         },
         'relay': {
           'name': globals.relayName,

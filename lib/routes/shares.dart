@@ -163,7 +163,17 @@ class ShareDetails {
     receiverConnection?.close();
     senderConnection?.close();
 
-    sharedDetails.removeWhere((key, value) => key == id);
+    // Just to make sure we free up memory
+    chunks.clear();
+    chunksSentToReceiver.clear();
+    chunksAcknowledgedByReceiver.clear();
+    primaryDetails = null;
+    cachedChunksBytes = 0;
+    cachedMessagesBytes = 0;
+    allowedBytesMax = 0;
+    lastChunkId = null;
+
+    sharedDetails.remove(id);
   }
 }
 
@@ -221,7 +231,7 @@ Future<Response> _readShare(Request request) async {
   }
 
   final share = sharedDetails[shareId];
-  if (share == null) {
+  if (share == null || share._deleted) {
     throw HttpError(404, 'share_not_found', 'No share with the provided shareId was found');
   }
 
@@ -250,7 +260,7 @@ Future<Response> _putChunk(Request request) async {
   }
 
   final share = sharedDetails[shareId];
-  if (share == null) {
+  if (share == null || share._deleted) {
     throw HttpError(404, 'share_not_found', 'No share with the provided shareId was found');
   }
 

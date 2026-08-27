@@ -1,14 +1,41 @@
-import 'dart:typed_data';
-
 import 'package:fleer_relay/routes/shares.dart';
 import 'package:fleer_relay/routes/socket.dart';
 import 'package:fleer_relay/utils/globals.dart' as globals;
 
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
 const _headers = {'content-type': 'application/json; charset=utf-8'};
+
+final String? buildVersion = _readBuildFile('CURRENT_VERSION.txt');
+final String? buildCommitHash = _readBuildFile('LATEST_COMMIT_HASH.txt');
+
+String? _readBuildFile(String fileName) {
+  final sep = Platform.pathSeparator;
+
+  // resolvedExecutable, if the server is compiled to a standalone executable, will point to the executable itself
+  final exeDir = File(Platform.resolvedExecutable).parent;
+
+  final candidates = <File>[
+    File('${exeDir.parent.path}$sep$fileName'), // when building with Docker, file is copied to /app but server is in /app/bin so we go backwards
+    File(fileName), // also the current working directory, in case the file might be here
+  ];
+
+  for (final file in candidates) {
+    try {
+      if (!file.existsSync()) continue;
+      final value = file.readAsStringSync().trim();
+      if (value.isEmpty || value == 'unknown') return null;
+      return value;
+    } on FileSystemException {
+      continue; // missing permissions for example
+    }
+  }
+  return null;
+}
 
 Router buildRouter() {
   return Router(
@@ -30,6 +57,8 @@ Router buildRouter() {
         'message': 'Fleer Relay API is running',
         'sharesCreationAllowed': isRamSufficientForNewShare(),
         'server': {
+          'buildVersion': buildVersion,
+          'buildCommitHash': buildCommitHash,
           'protocolVersion': globals.protocolVersion,
           'maxDeviceNameLength': globals.maxDeviceNameLength,
           'maxJsonBytes': globals.maxJsonBytes,

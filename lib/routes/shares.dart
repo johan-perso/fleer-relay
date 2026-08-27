@@ -47,7 +47,12 @@ class ShareDetails {
 
   int receivedBytes = 0;
   int allowedBytesMax = 0;
-  int _cachedBytes = 0;
+
+  int cachedChunksBytes = 0;
+  int cachedMessagesBytes = 0;
+
+  final _maxCachedBytesForChunks = (globals.maxCachedBytes! * 0.8) as int; // 80% of maxCachedBytes is reserved for chunks
+  final _maxCachedBytesForMessages = (globals.maxCachedBytes! * 0.2) as int; // 20% of maxCachedBytes is reserved for messages
 
   Uint8List? primaryDetails;
   bool uploadCanStart = false;
@@ -56,12 +61,15 @@ class ShareDetails {
     lastActivity = DateTime.now().toUtc();
   }
 
-  // Check if chunks+messages take way too much memory and if so, clear them and restart transfer
+  // Check if chunks or messages take too much memory and if so, clear them by restarting the transfer
   void checkMemoryUsage() {
-    final int maxSize = globals.maxCachedBytes! * 3;
-
-    if (_cachedBytes > maxSize) {
-      restartTransfer(textualReason: 'The entire transfer will be restarted because too many messages were sent (${_cachedBytes} bytes). The maximum total allowed size is ${maxSize} bytes');
+    if (cachedChunksBytes > _maxCachedBytesForChunks * 1.05) { // 5% safety margin, even if chunks should never exceed the limit because of security when receiving them
+      restartTransfer(textualReason: 'The entire transfer will be restarted because too many chunks were sent ($cachedChunksBytes bytes). The maximum total allowed size for chunks is $_maxCachedBytesForChunks bytes');
+      return;
+    }
+    if (cachedMessagesBytes > _maxCachedBytesForMessages) {
+      restartTransfer(textualReason: 'The entire transfer will be restarted because too many messages were sent ($cachedMessagesBytes bytes). The maximum total allowed size for messages is $_maxCachedBytesForMessages bytes');
+      return;
     }
   }
 
@@ -94,7 +102,7 @@ class ShareDetails {
     for (final entry in acknowledgedChunks) {
       final chunkId = entry.key;
       if(chunks.containsKey(chunkId)) {
-        _cachedBytes -= chunks[chunkId]?.length ?? 0;
+        cachedChunksBytes -= chunks[chunkId]?.length ?? 0;
         chunks[chunkId] = null; // only clear the data, keep the key to avoid skipping chunks
       }
     }
@@ -112,18 +120,20 @@ class ShareDetails {
     }
 
     receivedBytes = 0;
-    allowedBytesMax = globals.maxCachedBytes!;
+    cachedMessagesBytes = 0;
+    cachedChunksBytes = 0;
+    allowedBytesMax = _maxCachedBytesForChunks;
 
     uploadCanStart = true;
     canSendChunksToReceiver = false;
-
-    messagesFromReceiverQueue.clear();
-    messagesFromSenderQueue.clear();
 
     chunks.clear();
     chunksSentToReceiver.clear();
     chunksAcknowledgedByReceiver.clear();
     lastChunkId = null;
+
+    messagesFromReceiverQueue.clear();
+    messagesFromSenderQueue.clear();
 
     receiverConnection?.send('restartTransfer', {'message': textualReason});
     senderConnection?.send('restartTransfer', {'message': textualReason});
@@ -170,7 +180,7 @@ Future<Response> _createShare(Request request) async {
   if (globals.availableRam == null) {
     throw HttpError(503, 'server_not_ready', 'The server is not ready yet. Please try again in a few seconds.');
   }
-  if (!isRamSufficientForNewShare()) { // a share can use up to 2*maxCachedBytes (1*chunks and 1*messages), adding a safety margin
+  if (!isRamSufficientForNewShare()) { // check if the server has enough available RAM to create a new share
     throw HttpError(503, 'server_too_busy', 'The server is processing too many transfers at the moment. Please try again in a few seconds.');
   }
 
@@ -292,7 +302,7 @@ Future<Response> _putChunk(Request request) async {
 
   if (isThisPrimaryDetails) {
     share.primaryDetails = data;
-    share.allowedBytesMax = globals.maxCachedBytes!;
+    share.allowedBytesMax = share._maxCachedBytesForChunks;
     share.uploadCanStart = true;
     share.touch();
   } else {
@@ -307,7 +317,7 @@ Future<Response> _putChunk(Request request) async {
     }
 
     share.chunks[chunkId] = data;
-    share._cachedBytes += data.length;
+    share.cachedChunksBytes += data.length;
     share.receivedBytes += data.length;
     share.touch();
     share.checkMemoryUsage();

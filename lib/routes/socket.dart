@@ -428,11 +428,13 @@ void _handleSengMsgToOtherWay(SocketConnection connection, Object? data) {
   if (isSender) {
     share.receiverConnection?.send('msgFromSender', data);
     share.messagesFromSenderQueue.add(data);
+    share.cachedMessagesBytes += utf8.encode(jsonEncode(data)).length;
     share.checkMemoryUsage();
     return;
   } else {
     share.senderConnection?.send('msgFromReceiver', data);
     share.messagesFromReceiverQueue.add(data);
+    share.cachedMessagesBytes += utf8.encode(jsonEncode(data)).length;
     share.checkMemoryUsage();
     return;
   }

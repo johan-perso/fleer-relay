@@ -119,7 +119,7 @@ bool isRamSufficientForNewShare() {
   if (globals.availableRam == null) {
     return false;
   }
-  if (globals.availableRam! < globals.maxCachedBytes! * 4) { // a share can use up to 2*maxCachedBytes (1*chunks and 1*messages), adding a safety margin
+  if (globals.availableRam! < globals.maxCachedBytes! * 2) { // a share can use up to maxCachedBytes, adding a safety margin of one additional share
     return false;
   }
   if (globals.availableRam! < 100 * 1024 * 1024) { // at least 100 MiB of RAM should be available on the host

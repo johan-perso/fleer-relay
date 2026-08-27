@@ -51,8 +51,8 @@ class ShareDetails {
   int cachedChunksBytes = 0;
   int cachedMessagesBytes = 0;
 
-  final _maxCachedBytesForChunks = (globals.maxCachedBytes! * 0.8) as int; // 80% of maxCachedBytes is reserved for chunks
-  final _maxCachedBytesForMessages = (globals.maxCachedBytes! * 0.2) as int; // 20% of maxCachedBytes is reserved for messages
+  final _maxCachedBytesForChunks = (globals.maxCachedBytes! * 0.8).toInt(); // 80% of maxCachedBytes is reserved for chunks
+  final _maxCachedBytesForMessages = (globals.maxCachedBytes! * 0.2).toInt(); // 20% of maxCachedBytes is reserved for messages
 
   Uint8List? primaryDetails;
   bool uploadCanStart = false;

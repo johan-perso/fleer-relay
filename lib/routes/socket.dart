@@ -79,7 +79,10 @@ class SocketConnection {
   }) async {
     if (_closed) return;
     _closed = true;
-    await _channel.sink.close(code, reason);
+
+    try {
+      await _channel.sink.close(code, reason);
+    } catch (_) {}
   }
 }
 
@@ -297,6 +300,12 @@ void _handleSendingPrecedentChunks(SocketConnection connection, Object? data) {
     }
   }
 
+  if (share.chunks.isEmpty) {
+    connection.send('precedentsChunksUpdate', {'remaining': 0, 'message': 'All chunks have been sent to the receiver'});
+    connection.isDownloadResumed = true; // there is no chunk to acknowledge, so we need to resume the download right here
+    return;
+  }
+
   // Send chunks that the receiver has not received yet, but that we already got from the sender
   for (int i = fromChunkId; i <= untilChunkId; i++) {
     if (i > untilChunkId) break;
@@ -348,11 +357,18 @@ void _handleAcknowledgeChunks(SocketConnection connection, Object? data) {
 
   List<int>? acknowledgedChunks = [];
   List<dynamic>? acknowledgedChunksUnparsed = data['chunkIds'] as List<dynamic>?;
+
   if (acknowledgedChunksUnparsed == null || acknowledgedChunksUnparsed.isEmpty) {
     connection.send('error', {'error': 'missing_acknowledgedChunks', 'message': 'Missing or empty acknowledgedChunks'});
     unawaited(connection.close(code: ws_status.normalClosure, reason: 'missing_acknowledgedChunks'));
     return;
   } else {
+    if (acknowledgedChunksUnparsed.length > 500) {
+      connection.send('fatal', {'error': 'too_many_acknowledgedChunks', 'message': 'Too many chunkIds were provided in the same message, maximum is 500'});
+      unawaited(connection.close(code: ws_status.normalClosure, reason: 'too_many_acknowledgedChunks'));
+      return;
+    }
+
     for (final dynamic chunkIdUnparsed in acknowledgedChunksUnparsed) {
       int? chunkId = chunkIdUnparsed is int ? chunkIdUnparsed : int.tryParse(chunkIdUnparsed.toString());
       if (chunkId == null) {
@@ -360,13 +376,16 @@ void _handleAcknowledgeChunks(SocketConnection connection, Object? data) {
         unawaited(connection.close(code: ws_status.normalClosure, reason: 'invalid_chunkId'));
         return;
       } else {
-        acknowledgedChunks.add(chunkId);
+        // avoid duplicates and chunks that were already acknowledged
+        if (!acknowledgedChunks.contains(chunkId) && !share.chunksAcknowledgedByReceiver.containsKey(chunkId)) {
+          acknowledgedChunks.add(chunkId);
+        }
       }
 
       if (!share.chunksSentToReceiver.containsKey(chunkId)) {
         connection.send('fatal', {'error': 'invalid_chunkId', 'message': 'Chunk ID $chunkId was not sent to you, or has already been acknowledged'});
         unawaited(connection.close(code: ws_status.normalClosure, reason: 'invalid_chunkId'));
-        continue;
+        return;
       }
 
       share.chunksAcknowledgedByReceiver[chunkId] = true;
@@ -395,7 +414,7 @@ void _handleAcknowledgeChunks(SocketConnection connection, Object? data) {
       final chunkId = entry.key;
       final chunkData = share.chunks[chunkId];
 
-      if (share.chunks.containsKey(i) && chunkData == null) {
+      if (share.chunks.containsKey(chunkId) && chunkData == null) {
         share.restartTransfer();
         return;
       }
@@ -464,7 +483,7 @@ void _handleLastChunkIndication(SocketConnection connection, Object? data) {
     lastChunkId = int.tryParse(data['lastChunkId'] as String) ?? 0;
   }
 
-  if (lastChunkId > share.chunks.keys.last) {
+  if (share.chunks.isEmpty || lastChunkId > share.chunks.keys.last) {
     connection.send('fatal', {'error': 'lastChunkId_too_low', 'message': 'lastChunkId cannot be lower than the last chunkId sent to the receiver'});
     unawaited(connection.close(code: ws_status.normalClosure, reason: 'lastChunkId_too_low'));
     return;

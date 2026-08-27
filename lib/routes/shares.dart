@@ -2,12 +2,14 @@ import 'package:fleer_relay/routes/socket.dart';
 import 'package:fleer_relay/utils/globals.dart' as globals;
 import 'package:fleer_relay/routes/_router.dart';
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:collection';
 import 'dart:typed_data';
 import 'package:nanoid2/nanoid2.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
+import 'package:web_socket_channel/status.dart' as ws_status;
 
 enum ShareRole {
   sender,
@@ -63,7 +65,7 @@ class ShareDetails {
 
   // Check if chunks or messages take too much memory and if so, clear them by restarting the transfer
   void checkMemoryUsage() {
-    if (cachedChunksBytes > _maxCachedBytesForChunks * 1.05) { // 5% safety margin, even if chunks should never exceed the limit because of security when receiving them
+    if (cachedChunksBytes > _maxCachedBytesForChunks * 1.1) { // 10% safety margin, even if chunks should never exceed the limit because of security when receiving them
       restartTransfer(textualReason: 'The entire transfer will be restarted because too many chunks were sent ($cachedChunksBytes bytes). The maximum total allowed size for chunks is $_maxCachedBytesForChunks bytes');
       return;
     }
@@ -122,9 +124,9 @@ class ShareDetails {
     receivedBytes = 0;
     cachedMessagesBytes = 0;
     cachedChunksBytes = 0;
-    allowedBytesMax = _maxCachedBytesForChunks;
+    allowedBytesMax = _maxCachedBytesForChunks - (primaryDetails?.length ?? 0); // reserve some space for the primary details if they exist
 
-    uploadCanStart = true;
+    uploadCanStart = primaryDetails != null;
     canSendChunksToReceiver = false;
 
     chunks.clear();
@@ -160,8 +162,8 @@ class ShareDetails {
     // Notify both sender and receiver that the share is being deleted
     receiverConnection?.send('shareDeleted', {'message': textualReason});
     senderConnection?.send('shareDeleted', {'message': textualReason});
-    receiverConnection?.close();
-    senderConnection?.close();
+    unawaited(_closeQuietly(receiverConnection));
+    unawaited(_closeQuietly(senderConnection));
 
     // Just to make sure we free up memory
     chunks.clear();
@@ -175,6 +177,13 @@ class ShareDetails {
 
     sharedDetails.remove(id);
   }
+}
+
+Future<void> _closeQuietly(SocketConnection? connection) async {
+  if (connection == null) return;
+  try {
+    await connection.close(code: ws_status.normalClosure, reason: 'share_deleted');
+  } catch (_) {}
 }
 
 final sharedDetails = <String, ShareDetails>{};
@@ -312,7 +321,7 @@ Future<Response> _putChunk(Request request) async {
 
   if (isThisPrimaryDetails) {
     share.primaryDetails = data;
-    share.allowedBytesMax = share._maxCachedBytesForChunks;
+    share.allowedBytesMax = share._maxCachedBytesForChunks - data.length; // reserve some space for the primary details
     share.uploadCanStart = true;
     share.touch();
   } else {

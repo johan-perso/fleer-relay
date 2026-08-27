@@ -47,6 +47,7 @@ Future<void> _serve() async {
   stdout.writeln(repeat('-', 40));
   stdout.writeln('Max JSON body size:      ${globals.maxJsonBytes} bytes');
   stdout.writeln('Max chunked file size:   ${globals.maxChunkBytes} bytes');
+  stdout.writeln('Max transfer size:       ${globals.maxCachedBytes} bytes');
   stdout.writeln('Environment:             ${globals.isProduction ? 'production' : 'development'}');
   stdout.writeln(repeat('-', 40));
 
@@ -80,8 +81,13 @@ Future<void> _serve() async {
       return; // Avoid checking too often
     }
 
-    globals.availableRam = await readMemoryInfo().available;
-    lastAvailableRamCheck = DateTime.now();
+    try {
+      globals.availableRam = await readMemoryInfo().available;
+      lastAvailableRamCheck = DateTime.now();
+    } catch (e) {
+      stderr.writeln('Error while checking available RAM: $e');
+      exit(1);
+    }
   });
 }
 

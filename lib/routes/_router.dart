@@ -39,7 +39,7 @@ Router buildRouter() {
         'relay': {
           'name': globals.relayName,
           'contactEmail': globals.relayContactEmail,
-          'associatedLinks': globals.relayAssociatedLinks,
+          'associatedLinks': Map<String, String>.from(globals.relayAssociatedLinks)..removeWhere((key, value) => value.isEmpty),
         },
       });
     })

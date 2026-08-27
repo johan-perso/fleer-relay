@@ -1,4 +1,5 @@
 name: fleer_relay
+version: 0.1.0
 publish_to: none
 repository: https://github.com/johan-perso/fleer-relay
 

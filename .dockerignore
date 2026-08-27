@@ -2,7 +2,6 @@
 .packages
 build/
 
-.git/
 .gitignore
 
 .idea/

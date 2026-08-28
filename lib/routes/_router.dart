@@ -60,7 +60,6 @@ Router buildRouter() {
           'buildVersion': buildVersion,
           'buildCommitHash': buildCommitHash,
           'protocolVersion': globals.protocolVersion,
-          'maxDeviceNameLength': globals.maxDeviceNameLength,
           'maxJsonBytes': globals.maxJsonBytes,
           'maxChunkBytes': globals.maxChunkBytes,
           'maxCachedBytes': globals.maxCachedBytes,

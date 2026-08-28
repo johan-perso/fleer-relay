@@ -185,10 +185,6 @@ void _handleConnectToShare(SocketConnection connection, Object? data) {
     share.senderConnection = connection;
     connection.shareRole = ShareRole.sender;
 
-    if (share.receiverDeviceName != null) {
-      connection.send('receiverName', {'name': share.receiverDeviceName});
-    }
-
     for (final message in share.messagesFromReceiverQueue) {
       connection.send('msgFromReceiver', message);
     }
@@ -205,25 +201,10 @@ void _handleConnectToShare(SocketConnection connection, Object? data) {
       return;
     }
 
-    final deviceName = data['deviceName']?.toString();
-    if (deviceName == null || deviceName.isEmpty) {
-      connection.send('fatal', {'error': 'missing_deviceName', 'message': 'Missing or empty deviceName'});
-      unawaited(connection.close(code: ws_status.normalClosure, reason: 'missing_deviceName'));
-      return;
-    }
-
-    if (deviceName.length > globals.maxDeviceNameLength) {
-      connection.send('fatal', {'error': 'deviceName_too_long', 'message': 'Device name exceeds maximum length of ${globals.maxDeviceNameLength} characters'});
-      unawaited(connection.close(code: ws_status.normalClosure, reason: 'deviceName_too_long'));
-      return;
-    }
-
-    share.receiverDeviceName = deviceName;
     share.receiverConnection = connection;
     connection.shareRole = ShareRole.receiver;
 
     if (share.senderConnection != null) {
-      share.senderConnection!.send('receiverName', {'name': deviceName});
       share.receiverConnection!.send('receiverStatus', {'connected': true, 'message': 'A receiver has/is connected to the share'});
     }
 

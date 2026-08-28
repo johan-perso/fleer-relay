@@ -34,7 +34,6 @@ class ShareDetails {
   final DateTime creation;
   DateTime lastActivity;
 
-  String? receiverDeviceName;
   SocketConnection? receiverConnection;
   bool canSendChunksToReceiver = false;
   final Queue<dynamic> messagesFromReceiverQueue = ListQueue();

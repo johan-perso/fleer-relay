@@ -558,7 +558,43 @@ void _warnDisconnection(SocketConnection connection, int? code) {
   }
 }
 
+int _utf8LengthCapped(String s, int max) {
+  if (s.length > max) return s.length;
+  if (s.length * 3 <= max) return s.length;
+  var count = 0;
+  for (final rune in s.runes) {
+    count += rune <= 0x7F ? 1 : rune <= 0x7FF ? 2 : rune <= 0xFFFF ? 3 : 4;
+    if (count > max) return count;
+  }
+  return count;
+}
+
 void _onMessage(SocketConnection connection, Object? raw) {
+  final max = globals.maxSocketFrameBytes;
+
+  final int frameBytes = switch (raw) {
+    String value => _utf8LengthCapped(value, max),
+    List<int> bytes => bytes.length, // exact, aucun calcul
+    _ => -1,
+  };
+
+  if (frameBytes < 0) {
+    connection.send('error', {'message': 'Unsupported frame type'});
+    return;
+  }
+
+  if (frameBytes > max) {
+    connection.send('fatal', {
+      'error': 'frame_too_large',
+      'message': 'One frame sent through the WebSocket connection exceeded the maximum size of $max bytes',
+    });
+    unawaited(connection.close(
+      code: ws_status.messageTooBig,
+      reason: 'frame_too_large',
+    ));
+    return;
+  }
+
   // A WebSocket frame can be either a String (text) or a List<int> (binary), we need to handle both cases
   // and optionally decode the binary data as UTF-8 if needed
   final text = switch (raw) {
@@ -569,6 +605,12 @@ void _onMessage(SocketConnection connection, Object? raw) {
 
   if (text == null) {
     connection.send('error', {'message': 'Unsupported frame type'});
+    return;
+  }
+
+  if (text.length > globals.maxSocketFrameBytes) {
+    connection.send('fatal', {'error': 'frame_too_large', 'message': 'One frame sent through the WebSocket connection exceeded the maximum size of $max bytes (checked after decoding)'});
+    unawaited(connection.close(reason: 'frame_too_large'));
     return;
   }
 

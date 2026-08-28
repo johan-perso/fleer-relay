@@ -74,6 +74,7 @@ class SocketConnection {
 
     // Maximum amount of bytes and messages allowed for each second,
     // kinda extreme but should never be reached unless someone is really trying to abuse the server
+    // TODO: if a local server is implemented into a client (for LAN transfers), these limits should be increased by something like 50% (they are already high enough for this use case)
     const maxBytesPerSecond = 1024 * 1024 * 10; // 10 MiB
     const maxMessagesPerSecond = 8000; // 8000 messages
 
@@ -163,19 +164,20 @@ final socketRegistry = SocketRegistry();
 typedef SocketHandler = FutureOr<void> Function(
   SocketConnection connection,
   Object? data,
+  int frameBytes,
 );
 
 final Map<String, SocketHandler> _handlers = {
-  'FleerPing': (connection, data) => connection.send('FleerPong', data),
+  'FleerPing': (connection, data, _) => connection.send('FleerPong', data),
   'ConnectToShare': _handleConnectToShare,
   'GetPrecedentsChunks': _handleSendingPrecedentChunks,
   'AcknowledgeChunks': _handleAcknowledgeChunks,
-  'SendMsgToOtherWay': _handleSengMsgToOtherWay,
+  'SendMsgToOtherWay': _handleSendMsgToOtherWay,
   'LastChunk': _handleLastChunkIndication,
   'DeleteTransfer': _handleTransferDeletion,
 };
 
-void _handleConnectToShare(SocketConnection connection, Object? data) {
+void _handleConnectToShare(SocketConnection connection, Object? data, int frameBytes) {
   if (connection.isConnectedToShare) {
     connection.send('error', {'error': 'already_connected', 'message': 'You are already connected to a share'});
     return;
@@ -257,7 +259,7 @@ void _handleConnectToShare(SocketConnection connection, Object? data) {
     });
 }
 
-void _handleSendingPrecedentChunks(SocketConnection connection, Object? data) {
+void _handleSendingPrecedentChunks(SocketConnection connection, Object? data, int frameBytes) {
   if (connection.isDownloadResumed) {
     connection.send('fatal', {'error': 'download_has_resumed', 'message': 'You cannot request precedent chunks if download has already resumed'});
     unawaited(connection.close(code: ws_status.normalClosure, reason: 'download_has_resumed'));
@@ -346,7 +348,7 @@ void _handleSendingPrecedentChunks(SocketConnection connection, Object? data) {
   share.touch();
 }
 
-void _handleAcknowledgeChunks(SocketConnection connection, Object? data) {
+void _handleAcknowledgeChunks(SocketConnection connection, Object? data, int frameBytes) {
   ShareDetails? share = _checkSocketConnectedShare(connection);
   if(share == null) return;
 
@@ -447,27 +449,27 @@ void _handleAcknowledgeChunks(SocketConnection connection, Object? data) {
   share.clearAcknowledgedChunks();
 }
 
-void _handleSengMsgToOtherWay(SocketConnection connection, Object? data) {
+void _handleSendMsgToOtherWay(SocketConnection connection, Object? data, int frameBytes) {
   ShareDetails? share = _checkSocketConnectedShare(connection);
   if(share == null) return;
 
   final isSender = share.senderConnection == connection;
+  final frame = SocketMessage(isSender ? 'msgFromSender' : 'msgFromReceiver', data).encode();
+
   if (isSender) {
-    share.receiverConnection?.send('msgFromSender', data);
-    share.messagesFromSenderQueue.add(data);
-    share.cachedMessagesBytes += utf8.encode(jsonEncode(data)).length;
-    share.checkMemoryUsage();
-    return;
+    share.receiverConnection?.sendRaw(frame);
+    share.messagesFromSenderQueue.add(frame);
   } else {
-    share.senderConnection?.send('msgFromReceiver', data);
-    share.messagesFromReceiverQueue.add(data);
-    share.cachedMessagesBytes += utf8.encode(jsonEncode(data)).length;
-    share.checkMemoryUsage();
-    return;
+    share.senderConnection?.sendRaw(frame);
+    share.messagesFromReceiverQueue.add(frame);
   }
+
+  share.cachedMessagesBytes += frameBytes;
+  share.touch();
+  share.checkMemoryUsage();
 }
 
-void _handleLastChunkIndication(SocketConnection connection, Object? data) {
+void _handleLastChunkIndication(SocketConnection connection, Object? data, int frameBytes) {
   ShareDetails? share = _checkSocketConnectedShare(connection);
   if(share == null) return;
 
@@ -503,7 +505,7 @@ void _handleLastChunkIndication(SocketConnection connection, Object? data) {
   share.receiverConnection?.send('lastChunkIndicated', {'lastChunkId': lastChunkId, 'message': 'The sender has indicated the last chunk to be sent'});
 }
 
-void _handleTransferDeletion(SocketConnection connection, Object? data) {
+void _handleTransferDeletion(SocketConnection connection, Object? data, int frameBytes) {
   ShareDetails? share = _checkSocketConnectedShare(connection);
   if(share == null) return;
 
@@ -647,12 +649,6 @@ void _onMessage(SocketConnection connection, Object? raw) {
     return;
   }
 
-  if (text.length > globals.maxSocketFrameBytes) {
-    connection.send('fatal', {'error': 'frame_too_large', 'message': 'One frame sent through the WebSocket connection exceeded the maximum size of $max bytes (checked after decoding)'});
-    unawaited(connection.close(reason: 'frame_too_large'));
-    return;
-  }
-
   final message = SocketMessage.tryParse(text);
   if (message == null) {
     connection.send('error', {
@@ -667,5 +663,5 @@ void _onMessage(SocketConnection connection, Object? raw) {
     return;
   }
 
-  handler(connection, message.data);
+  handler(connection, message.data, frameBytes);
 }

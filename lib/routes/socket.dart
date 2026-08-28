@@ -46,6 +46,10 @@ class SocketConnection {
   final String id;
   final DateTime connectedAt;
 
+  int _bytesThisSecond = 0;
+  int _messagesThisSecond = 0;
+  int _windowStartMs = 0;
+
   bool isConnectedToShare = false;
   String? connectedShareId;
   ShareRole? shareRole;
@@ -53,6 +57,29 @@ class SocketConnection {
   bool isDownloadResumed = false;
 
   bool _closed = false;
+
+  // Method to check if a connection is rate limited (either because of too many messages or too many bytes sent)
+  bool allowMessage(int bytes) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    // If the last check was at least one second ago, we can reset the counters
+    if (now - _windowStartMs >= 1000) {
+      _windowStartMs = now;
+      _bytesThisSecond = 0;
+      _messagesThisSecond = 0;
+    }
+
+    _bytesThisSecond += bytes;
+    _messagesThisSecond += 1;
+
+    // Maximum amount of bytes and messages allowed for each second,
+    // kinda extreme but should never be reached unless someone is really trying to abuse the server
+    const maxBytesPerSecond = 1024 * 1024 * 10; // 10 MiB
+    const maxMessagesPerSecond = 8000; // 8000 messages
+
+    final exceeded = _bytesThisSecond > maxBytesPerSecond || _messagesThisSecond > maxMessagesPerSecond;
+    return !exceeded;
+}
 
   // Method to encode and send a JSON message to the client
   void send(String type, [Object? data]) {
@@ -589,8 +616,20 @@ void _onMessage(SocketConnection connection, Object? raw) {
       'message': 'One frame sent through the WebSocket connection exceeded the maximum size of $max bytes',
     });
     unawaited(connection.close(
-      code: ws_status.messageTooBig,
+      code: ws_status.normalClosure,
       reason: 'frame_too_large',
+    ));
+    return;
+  }
+
+  if (!connection.allowMessage(frameBytes)) {
+    connection.send('fatal', {
+      'error': 'rate_limited',
+      'message': 'Too many messages or too many bytes were sent through the WebSocket connection in a short period of time',
+    });
+    unawaited(connection.close(
+      code: ws_status.normalClosure,
+      reason: 'rate_limited',
     ));
     return;
   }

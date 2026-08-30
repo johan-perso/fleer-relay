@@ -22,6 +22,8 @@ class ShareDetails {
     required this.filesCount,
     required this.foldersCount,
     required this.totalSize, // approximate total size of all files, doesn't include encryption overhead over time - clients can send more than the size they declared
+    required this.maxCachedBytesForChunks,
+    required this.maxCachedBytesForMessages
   }) : creation = DateTime.now().toUtc(), lastActivity = DateTime.now().toUtc();
 
   final String id;
@@ -52,8 +54,8 @@ class ShareDetails {
   int cachedChunksBytes = 0;
   int cachedMessagesBytes = 0;
 
-  final _maxCachedBytesForChunks = (globals.maxCachedBytes! * 0.8).toInt(); // 80% of maxCachedBytes is reserved for chunks
-  final _maxCachedBytesForMessages = (globals.maxCachedBytes! * 0.2).toInt(); // 20% of maxCachedBytes is reserved for messages
+  final int maxCachedBytesForChunks;
+  final int maxCachedBytesForMessages;
 
   Uint8List? primaryDetails;
   bool uploadCanStart = false;
@@ -64,12 +66,12 @@ class ShareDetails {
 
   // Check if chunks or messages take too much memory and if so, clear them by restarting the transfer
   void checkMemoryUsage() {
-    if (cachedChunksBytes > _maxCachedBytesForChunks * 1.1) { // 10% safety margin, even if chunks should never exceed the limit because of security when receiving them
-      restartTransfer(textualReason: 'The entire transfer will be restarted because too many chunks were sent ($cachedChunksBytes bytes). The maximum total allowed size for chunks is $_maxCachedBytesForChunks bytes');
+    if (cachedChunksBytes > maxCachedBytesForChunks * 1.1) { // 10% safety margin, even if chunks should never exceed the limit because of security when receiving them
+      restartTransfer(textualReason: 'The entire transfer will be restarted because too many chunks were sent ($cachedChunksBytes bytes). The maximum total allowed size for chunks is $maxCachedBytesForChunks bytes');
       return;
     }
-    if (cachedMessagesBytes > _maxCachedBytesForMessages) {
-      restartTransfer(textualReason: 'The entire transfer will be restarted because too many messages were sent ($cachedMessagesBytes bytes). The maximum total allowed size for messages is $_maxCachedBytesForMessages bytes');
+    if (cachedMessagesBytes > maxCachedBytesForMessages) {
+      restartTransfer(textualReason: 'The entire transfer will be restarted because too many messages were sent ($cachedMessagesBytes bytes). The maximum total allowed size for messages is $maxCachedBytesForMessages bytes');
       return;
     }
   }
@@ -123,7 +125,7 @@ class ShareDetails {
     receivedBytes = 0;
     cachedMessagesBytes = 0;
     cachedChunksBytes = 0;
-    allowedBytesMax = _maxCachedBytesForChunks - (primaryDetails?.length ?? 0); // reserve some space for the primary details if they exist
+    allowedBytesMax = maxCachedBytesForChunks - (primaryDetails?.length ?? 0); // reserve some space for the primary details if they exist
 
     uploadCanStart = primaryDetails != null;
     canSendChunksToReceiver = false;
@@ -215,6 +217,14 @@ Future<Response> _createShare(Request request) async {
     throw HttpError(400, 'invalid_totalSize', 'totalSize must be at least 1 byte');
   }
 
+  final chunksMessagesCacheRatio = _readCount(body, 'chunksMessagesCacheRatio');
+  if(chunksMessagesCacheRatio < 1 || chunksMessagesCacheRatio > 99) {
+    throw HttpError(400, 'invalid_chunksMessagesCacheRatio', 'chunksMessagesCacheRatio must be between 1 and 99 (suggested value: 80, meaning 80% of the cache is reserved for chunks and 20% for messages)');
+  }
+
+  final int maxCachedBytesForChunks = (globals.maxCachedBytes! * (chunksMessagesCacheRatio / 100)).toInt();
+  final int maxCachedBytesForMessages = (globals.maxCachedBytes! * ((100 - chunksMessagesCacheRatio) / 100)).toInt();
+
   final shareId = _generateShareId();
 
   sharedDetails[shareId] = ShareDetails(
@@ -222,6 +232,8 @@ Future<Response> _createShare(Request request) async {
     filesCount: filesCount,
     foldersCount: foldersCount,
     totalSize: totalSize,
+    maxCachedBytesForChunks: maxCachedBytesForChunks,
+    maxCachedBytesForMessages: maxCachedBytesForMessages,
   );
 
   return jsonOk({'shareId': shareId});
@@ -320,7 +332,7 @@ Future<Response> _putChunk(Request request) async {
 
   if (isThisPrimaryDetails) {
     share.primaryDetails = data;
-    share.allowedBytesMax = share._maxCachedBytesForChunks - data.length; // reserve some space for the primary details
+    share.allowedBytesMax = share.maxCachedBytesForChunks - data.length; // reserve some space for the primary details
     share.uploadCanStart = true;
     share.touch();
   } else {

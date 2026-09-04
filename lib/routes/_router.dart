@@ -63,6 +63,8 @@ Router buildRouter() {
           'maxJsonBytes': globals.maxJsonBytes,
           'maxChunkBytes': globals.maxChunkBytes,
           'maxCachedBytes': globals.maxCachedBytes,
+          'maxSocketFrameBytes': globals.maxSocketFrameBytes,
+          'maxAcknowledgedChunksPerMessage': globals.maxAcknowledgedChunksPerMessage
         },
         'relay': {
           'name': globals.relayName,

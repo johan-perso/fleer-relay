@@ -373,7 +373,7 @@ void _handleAcknowledgeChunks(SocketConnection connection, Object? data, int fra
     unawaited(connection.close(code: ws_status.normalClosure, reason: 'missing_acknowledgedChunks'));
     return;
   } else {
-    if (acknowledgedChunksUnparsed.length > 500) {
+    if (acknowledgedChunksUnparsed.length > globals.maxAcknowledgedChunksPerMessage) {
       connection.send('fatal', {'error': 'too_many_acknowledgedChunks', 'message': 'Too many chunkIds were provided in the same message, maximum is 500'});
       unawaited(connection.close(code: ws_status.normalClosure, reason: 'too_many_acknowledgedChunks'));
       return;

@@ -2,6 +2,7 @@ const int protocolVersion = 1;
 
 const int maxJsonBytes = 1 << 20; // 1 MiB
 const int maxSocketFrameBytes = 64 << 10; // 64 KiB
+const int maxAcknowledgedChunksPerMessage = 500;
 
 int? port;
 int? maxChunkBytes;

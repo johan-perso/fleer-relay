@@ -46,7 +46,10 @@ class ShareDetails {
   final Map<int, Uint8List?> chunks = {};
   final Map<int, bool> chunksSentToReceiver = {};
   final Map<int, bool> chunksAcknowledgedByReceiver = {};
-  int? lastChunkId; // does not refer to the last chunk received, but to the very last chunk that the sender will send before ending the transfer
+
+  // Does not refer to the last chunk received, but to the very last chunk that the sender will send before ending the transfer,
+  // This is NOT strictly enforced and the sender might send more chunks after this, for example to proceed to integrity check
+  int? lastChunkId;
 
   int receivedBytes = 0;
   int allowedBytesMax = 0;
@@ -300,10 +303,6 @@ Future<Response> _putChunk(Request request) async {
   }
   if (chunkId != null && (chunkId < 0 || chunkId > 4294967295 - 1)) { // highest value for a 32-bit unsigned integer is 4294967295, but we subtract 1 to avoid potential overflow issues
     throw HttpError(400, 'invalid_chunkId', 'chunkId must be a non-negative integer between 0 and 4294967294');
-  }
-
-  if (chunkId is int && share.lastChunkId is int && chunkId > share.lastChunkId!) {
-    throw HttpError(400, 'chunkId_higher_than_lastChunkId', 'chunkId cannot be greater than the lastChunkId (${share.lastChunkId}) you sent');
   }
 
   final contentType = request.headers['content-type'] ?? '';

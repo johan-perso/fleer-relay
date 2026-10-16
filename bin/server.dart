@@ -82,7 +82,9 @@ Future<void> _serve() async {
     }
 
     try {
-      globals.availableRam = await readMemoryInfo().available;
+      MemoryInfo memoryInfo = await readMemoryInfo();
+      stdout.writeln('Checked RAM details: ${memoryInfo.toString()}');
+      globals.availableRam = memoryInfo.availableWithSwap;
       lastAvailableRamCheck = DateTime.now();
     } catch (e) {
       stderr.writeln('Error while checking available RAM: $e');

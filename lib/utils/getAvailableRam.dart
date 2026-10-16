@@ -34,6 +34,8 @@ class MemoryInfo {
     required this.total,
     required this.available,
     required this.totalLimitedBy,
+    this.swapTotal = 0,
+    this.swapFree = 0,
   });
 
   /// Total memory available to the process from the operating system's point
@@ -47,6 +49,8 @@ class MemoryInfo {
   /// Not every platform limit is reflected here: on Windows this is physical
   /// memory, and a Job Object memory limit — the mechanism Windows containers
   /// use — is not taken into account.
+  ///
+  /// Swap is never included; see [swapTotal].
   final int total;
 
   /// Estimated memory that can be allocated without swapping, in bytes.
@@ -60,6 +64,8 @@ class MemoryInfo {
   /// May be bounded by a cgroup even when [totalLimitedBy] is
   /// [MemoryLimitSource.host]: a cgroup whose limit equals physical memory
   /// still constrains how much of it is left.
+  ///
+  /// Swap is never included; see [availableWithSwap].
   final int available;
 
   /// Whether [total] is bounded by the host or by a cgroup.
@@ -68,16 +74,38 @@ class MemoryInfo {
   /// disagree.
   final MemoryLimitSource totalLimitedBy;
 
+  /// Swap space currently allocated on the host, in bytes.
+  ///
+  /// On Linux this is the configured swap and is fixed. On macOS and Windows
+  /// swap grows on demand by default, so this is only what is allocated right
+  /// now, not a ceiling: it can be 0 on a machine that has not swapped yet.
+  ///
+  /// On Windows this is approximated from the commit limit (RAM + page file)
+  /// minus physical memory. A cgroup swap limit (`memory.swap.max`) is not
+  /// taken into account.
+  final int swapTotal;
+
+  /// Unused part of [swapTotal], in bytes. Same caveats as [swapTotal].
+  final int swapFree;
+
   int get used => total - available;
 
   /// Available fraction, between 0.0 and 1.0.
   double get availableRatio => total == 0 ? 0 : available / total;
+
+  /// [available] plus [swapFree], in bytes.
+  ///
+  /// Swap is much slower than RAM: only rely on this when degraded
+  /// performance is acceptable. On macOS and Windows it underestimates what
+  /// the system could provide, since swap can still grow.
+  int get availableWithSwap => available + swapFree;
 
   @override
   String toString() {
     String mib(int bytes) =>
         '${(bytes / (1024 * 1024)).toStringAsFixed(0)} MiB';
     return 'MemoryInfo(total: ${mib(total)}, available: ${mib(available)}, '
+        'swapTotal: ${mib(swapTotal)}, swapFree: ${mib(swapFree)}, '
         'totalLimitedBy: ${totalLimitedBy.name})';
   }
 }
@@ -110,6 +138,10 @@ void validateMemoryReading() {
   if (info.available < 0 || info.available > info.total) {
     throw StateError(
         'Inconsistent available memory: ${info.available} of ${info.total}');
+  }
+  if (info.swapFree < 0 || info.swapFree > info.swapTotal) {
+    throw StateError(
+        'Inconsistent free swap: ${info.swapFree} of ${info.swapTotal}');
   }
 }
 
@@ -178,6 +210,9 @@ MemoryInfo linuxMemoryInfo({
     totalLimitedBy: cgroup.limit < host.total
         ? MemoryLimitSource.cgroup
         : MemoryLimitSource.host,
+    // Host swap figures carried over as is: a cgroup swap limit is not read.
+    swapTotal: host.swapTotal,
+    swapFree: host.swapFree,
   );
 }
 
@@ -206,10 +241,16 @@ MemoryInfo _hostMemInfo(String meminfoPath) {
           (values['Buffers'] ?? 0) +
           (values['Cached'] ?? 0));
 
+  // Both entries are always present, at 0 when no swap is configured.
+  final swapTotal = values['SwapTotal'] ?? 0;
+  final swapFree = values['SwapFree'] ?? 0;
+
   return MemoryInfo(
     total: total,
     available: math.min(available, total),
     totalLimitedBy: MemoryLimitSource.host,
+    swapTotal: swapTotal,
+    swapFree: math.min(swapFree, swapTotal),
   );
 }
 
@@ -445,10 +486,21 @@ MemoryInfo _windowsMemoryInfo() {
     if (_globalMemoryStatusEx(status) == 0) {
       throw StateError('GlobalMemoryStatusEx failed');
     }
+
+    final s = status.ref;
+
+    // Despite their names, the "page file" fields are the commit limit and the
+    // remaining commit (RAM + page file). Subtracting the physical figures
+    // approximates the page file alone. The API exposes nothing more precise.
+    final swapTotal = math.max(0, s.ullTotalPageFile - s.ullTotalPhys);
+    final swapFree = math.max(0, s.ullAvailPageFile - s.ullAvailPhys);
+
     return MemoryInfo(
-      total: status.ref.ullTotalPhys,
-      available: status.ref.ullAvailPhys,
+      total: s.ullTotalPhys,
+      available: s.ullAvailPhys,
       totalLimitedBy: MemoryLimitSource.host,
+      swapTotal: swapTotal,
+      swapFree: math.min(swapFree, swapTotal),
     );
   } finally {
     calloc.free(status);
@@ -515,6 +567,22 @@ final class _VMStatistics64 extends Struct {
   external int totalUncompressedPagesInCompressor;
 }
 
+/// `struct xsw_usage` from <sys/sysctl.h>, returned by `vm.swapusage`.
+///
+/// Sizes are in bytes. `xsu_encrypted` is a `boolean_t`, a 32-bit int.
+final class _XswUsage extends Struct {
+  @Uint64()
+  external int total;
+  @Uint64()
+  external int avail;
+  @Uint64()
+  external int used;
+  @Uint32()
+  external int pageSize;
+  @Uint32()
+  external int encrypted;
+}
+
 const int _hostVmInfo64 = 4; // HOST_VM_INFO64
 
 typedef _MachHostSelfNative = Uint32 Function();
@@ -574,10 +642,14 @@ MemoryInfo _macosMemoryInfo() {
         s.compressorPageCount;
     final used = usedPages * pageSize;
 
+    final swap = _macosSwapUsage();
+
     return MemoryInfo(
       total: total,
       available: math.max(0, math.min(total, total - used)),
       totalLimitedBy: MemoryLimitSource.host,
+      swapTotal: swap.total,
+      swapFree: math.min(swap.free, swap.total),
     );
   } finally {
     calloc.free(stats);
@@ -596,6 +668,27 @@ int _macosPageSize() {
     return _libSystem.lookup<Uint64>('vm_kernel_page_size').value;
   } on ArgumentError {
     return _sysctlUint64('hw.pagesize');
+  }
+}
+
+/// Reads `vm.swapusage`.
+///
+/// Returns zeros on failure rather than throwing: swap is secondary
+/// information and must not make the whole reading fail.
+({int total, int free}) _macosSwapUsage() {
+  final namePtr = 'vm.swapusage'.toNativeUtf8();
+  final out = calloc<_XswUsage>();
+  final length = calloc<Size>();
+  try {
+    length.value = sizeOf<_XswUsage>();
+    if (_sysctlByName(namePtr, out.cast<Void>(), length, nullptr, 0) != 0) {
+      return (total: 0, free: 0);
+    }
+    return (total: out.ref.total, free: out.ref.avail);
+  } finally {
+    calloc.free(namePtr);
+    calloc.free(out);
+    calloc.free(length);
   }
 }
 

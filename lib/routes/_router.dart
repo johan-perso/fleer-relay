@@ -49,9 +49,6 @@ Router buildRouter() {
       if (globals.availableRam == null) {
         throw HttpError(503, 'server_not_ready', 'The server is not ready yet. Please try again in a few seconds.');
       }
-      if (!isRamSufficientForNewShare()) {
-        throw HttpError(503, 'server_too_busy', 'The server is processing too many transfers at the moment. Please try again in a few seconds.');
-      }
 
       return jsonOk({
         'message': 'Fleer Relay API is running',

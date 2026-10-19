@@ -6,10 +6,6 @@ Everything you dream about a one-to-one file sharing service: easy, privacy-firs
 
 > This GitHub repository contains the source code required to run a relay server. Related projects can be found on the [@johan-perso](https://github.com/johan-perso?tab=repositories&q=fleer-) profile.
 
-> [!IMPORTANT]  
-> This project is still in development and is far from being production-ready. Tbh you should not even try to compile it yet.  
-> I'm just sharing my progress for those who are curious.
-
 
 ## Hosting
 

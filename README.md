@@ -2,7 +2,7 @@
 
 # Fleer | Relay Server
 
-Everything you dream about a one-to-one file sharing service: easy, privacy-first, decentralized and cross-platform, without limits.
+Everything you dream of in a one-to-one file sharing service: easy, privacy-first, decentralized and cross-platform, without limits.
 
 > This GitHub repository contains the source code required to run a relay server. Related projects can be found on the [@johan-perso](https://github.com/johan-perso?tab=repositories&q=fleer-) profile.
 

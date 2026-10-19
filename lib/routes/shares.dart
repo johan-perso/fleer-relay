@@ -355,9 +355,10 @@ Future<Response> _putChunk(Request request) async {
     share.clearAcknowledgedChunks();
     share.checkSendingChunksToReceiver();
 
-    if (share.canSendChunksToReceiver) {
+    final receiver = share.receiverConnection;
+    if (share.canSendChunksToReceiver && receiver != null && receiver.isDownloadResumed) {
       share.chunksSentToReceiver[chunkId] = true;
-      share.receiverConnection?.sendBinary(frameChunk(chunkId, data));
+      receiver.sendBinary(frameChunk(chunkId, data));
     }
   }
 

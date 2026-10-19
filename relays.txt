@@ -1,0 +1,9 @@
+# Default list of relay servers.
+# This list is not read by the relay server itself.
+# This list (and other ones) can be used by clients to find a relay server to use.
+
+# Warning: the project is still in development, and official hosting can be down at any time.
+# You should not rely on using Fleer for the moment.
+
+https://fleerlondonlow.johanstick.fr
+https://fleerparismid.johanstick.fr
